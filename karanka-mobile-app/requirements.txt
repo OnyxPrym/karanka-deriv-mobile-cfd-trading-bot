@@ -1,58 +1,9 @@
-# Core Framework
-Flask==2.3.3
-Flask-SocketIO==5.3.4
+flask==2.3.3
+flask-socketio==5.3.4
 python-socketio==5.9.0
 eventlet==0.33.3
 gunicorn==21.2.0
-websockets==12.0
-
-# UI/UX Requirements
-flask-cors==4.0.0
-Flask-Login==0.6.2
-Flask-Session==0.5.0
-itsdangerous==2.1.2
-Werkzeug==2.3.7
-
-# Data Processing & Analysis
+websockets==12.0  # ← CHANGED from websocket-client to websockets
 pandas==2.0.3
 numpy==1.24.3
-python-dateutil==2.8.2
-pytz==2023.3
-scipy==1.11.1
-ta-lib==0.4.28
-
-# Charting & Visualization (for UI)
-plotly==5.15.0
-chart-studio==1.1.0
-matplotlib==3.7.2
-
-# Database (if using)
-SQLAlchemy==2.0.19
-Flask-SQLAlchemy==3.0.5
-redis==4.6.0
-
-# Async & Background Tasks
-celery==5.3.1
-redis==4.6.0
-
-# MT5 Integration (for desktop, but keeping for compatibility)
-MetaTrader5==5.0.45
-
-# Mobile-specific UI requirements
-Pillow==10.0.0  # For image processing
-qrcode==7.4.2   # For QR code generation (mobile pairing)
-pyotp==2.8.0    # For 2FA/security
-python-dotenv==1.0.0
-
-# API & Communication
 requests==2.31.0
-urllib3==2.0.4
-certifi==2023.7.22
-
-# Logging & Monitoring
-loguru==0.7.2
-prometheus-flask-exporter==0.22.4
-
-# Performance
-ujson==5.8.0
-orjson==3.9.7
