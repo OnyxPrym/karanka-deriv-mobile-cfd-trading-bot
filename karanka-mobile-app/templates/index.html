@@ -3,213 +3,1023 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=yes">
-    <title>KARANKA MULTIVERSE ALGO AI</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <title>KARANKA MULTIVERSE ALGO AI - DERIV PRODUCTION</title>
+    <script src="https://cdn.socket.io/4.5.0/socket.io.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Arial', sans-serif;
+        }
+        
+        body {
+            background-color: #000000;
+            color: #FFD700;
+            padding: 10px;
+            min-height: 100vh;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #0a0a0a;
+            border: 2px solid #FFD700;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+        }
+        
+        h1 {
+            text-align: center;
+            margin-bottom: 15px;
+            font-size: 1.5rem;
+            text-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
+            border-bottom: 2px solid #FFD700;
+            padding-bottom: 10px;
+            color: #FFD700;
+        }
+        
+        h2 {
+            color: #D4AF37;
+            font-size: 1.2rem;
+            margin: 10px 0;
+            border-left: 4px solid #FFD700;
+            padding-left: 8px;
+        }
+        
+        h3 {
+            color: #FFED4E;
+            font-size: 1rem;
+            margin: 8px 0;
+        }
+        
+        .status-panel {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+            padding: 12px;
+            background: #000000;
+            border: 1px solid #FFD700;
+            border-radius: 5px;
+        }
+        
+        .status-item {
+            font-size: 0.9rem;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        
+        .status-item span:first-child {
+            color: #B8860B;
+            font-size: 0.8rem;
+        }
+        
+        .status-item span:last-child {
+            font-weight: bold;
+            font-size: 1.1rem;
+            color: #FFD700;
+        }
+        
+        .status-on {
+            color: #00FF00 !important;
+            text-shadow: 0 0 10px #00FF00;
+        }
+        
+        .status-off {
+            color: #FF4444 !important;
+            text-shadow: 0 0 10px #FF4444;
+        }
+        
+        .tab-container {
+            display: flex;
+            gap: 3px;
+            margin-bottom: 15px;
+            border-bottom: 2px solid #FFD700;
+            padding-bottom: 5px;
+            overflow-x: auto;
+            -webkit-overflow-scrolling: touch;
+        }
+        
+        .tab-button {
+            background: transparent;
+            color: #FFD700;
+            border: 1px solid #FFD700;
+            padding: 8px 12px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+            border-radius: 5px 5px 0 0;
+            white-space: nowrap;
+            flex: 0 1 auto;
+        }
+        
+        .tab-button:hover, .tab-button.active {
+            background: #FFD700;
+            color: #000000;
+            font-weight: bold;
+        }
+        
+        .tab-content {
+            display: none;
+            padding: 15px;
+            background: #000000;
+            border: 1px solid #333333;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+        
+        .tab-content.active {
+            display: block;
+        }
+        
+        .signal-card {
+            background: #0a0a0a;
+            border: 1px solid #FFD700;
+            border-radius: 5px;
+            padding: 12px;
+            margin-bottom: 10px;
+        }
+        
+        .signal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            border-bottom: 1px solid #333333;
+            padding-bottom: 5px;
+        }
+        
+        .signal-symbol {
+            font-weight: bold;
+            color: #FFD700;
+            font-size: 1.1rem;
+        }
+        
+        .signal-type {
+            padding: 4px 8px;
+            border-radius: 3px;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+        
+        .signal-type.buy {
+            background: #00FF00;
+            color: #000000;
+        }
+        
+        .signal-type.sell {
+            background: #FF4444;
+            color: #FFFFFF;
+        }
+        
+        .signal-details {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+            gap: 8px;
+            font-size: 0.85rem;
+        }
+        
+        .signal-detail {
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .signal-detail .label {
+            color: #B8860B;
+            font-size: 0.75rem;
+        }
+        
+        .signal-detail .value {
+            color: #FFED4E;
+            font-weight: bold;
+        }
+        
+        .signal-confidence {
+            height: 6px;
+            background: #333333;
+            border-radius: 3px;
+            margin: 8px 0;
+            overflow: hidden;
+        }
+        
+        .confidence-bar {
+            height: 100%;
+            background: #FFD700;
+            border-radius: 3px;
+        }
+        
+        .trade-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr 1fr 1fr;
+            gap: 5px;
+            padding: 8px;
+            border-bottom: 1px solid #333333;
+            font-size: 0.8rem;
+        }
+        
+        .trade-header {
+            font-weight: bold;
+            color: #D4AF37;
+            background: #0a0a0a;
+        }
+        
+        .trade-profit {
+            color: #00FF00;
+        }
+        
+        .trade-loss {
+            color: #FF4444;
+        }
+        
+        .form-group {
+            margin-bottom: 15px;
+        }
+        
+        label {
+            display: block;
+            color: #B8860B;
+            margin-bottom: 5px;
+            font-size: 0.9rem;
+        }
+        
+        input, select, textarea {
+            width: 100%;
+            padding: 10px;
+            background: #000000;
+            border: 2px solid #FFD700;
+            color: #FFD700;
+            border-radius: 5px;
+            font-size: 0.95rem;
+        }
+        
+        input:focus, select:focus {
+            outline: none;
+            box-shadow: 0 0 10px #FFD700;
+        }
+        
+        button {
+            background: #8B7500;
+            color: #FFD700;
+            border: none;
+            padding: 12px 20px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            border-radius: 5px;
+            transition: all 0.3s;
+            margin-right: 8px;
+            margin-bottom: 8px;
+            border: 1px solid #FFD700;
+        }
+        
+        button:hover {
+            background: #FFD700;
+            color: #000000;
+            transform: scale(1.02);
+        }
+        
+        .button-group {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin: 15px 0;
+        }
+        
+        .start-btn {
+            background: #006400;
+            border-color: #00FF00;
+            color: #00FF00;
+        }
+        
+        .stop-btn {
+            background: #8B0000;
+            border-color: #FF4444;
+            color: #FF4444;
+        }
+        
+        .checkbox-group {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            gap: 8px;
+            max-height: 300px;
+            overflow-y: auto;
+            padding: 10px;
+            background: #0a0a0a;
+            border: 1px solid #333333;
+            border-radius: 5px;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #FFD700;
+            font-size: 0.9rem;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            width: auto;
+            margin-right: 5px;
+        }
+        
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+            gap: 10px;
+            margin: 15px 0;
+        }
+        
+        .stat-card {
+            background: #0a0a0a;
+            border: 1px solid #FFD700;
+            border-radius: 5px;
+            padding: 12px;
+            text-align: center;
+        }
+        
+        .stat-value {
+            font-size: 1.6rem;
+            font-weight: bold;
+            color: #FFD700;
+            line-height: 1.2;
+        }
+        
+        .stat-label {
+            color: #B8860B;
+            font-size: 0.8rem;
+            text-transform: uppercase;
+        }
+        
+        .market-state-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            background: #333333;
+            color: #FFD700;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        
+        .log-container {
+            background: #000000;
+            border: 1px solid #333333;
+            border-radius: 5px;
+            padding: 10px;
+            max-height: 200px;
+            overflow-y: auto;
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: #FFED4E;
+        }
+        
+        .footer {
+            text-align: center;
+            margin-top: 15px;
+            padding-top: 10px;
+            border-top: 1px solid #333333;
+            color: #B8860B;
+            font-size: 0.8rem;
+        }
+        
+        @media (max-width: 768px) {
+            .container {
+                padding: 8px;
+            }
+            
+            h1 {
+                font-size: 1.2rem;
+            }
+            
+            .tab-button {
+                padding: 6px 10px;
+                font-size: 0.8rem;
+            }
+            
+            .signal-details {
+                grid-template-columns: 1fr 1fr;
+            }
+            
+            .trade-row {
+                grid-template-columns: 1fr 1fr;
+                gap: 8px;
+            }
+            
+            .trade-header {
+                display: none;
+            }
+            
+            .trade-row:before {
+                content: attr(data-label);
+                font-weight: bold;
+                color: #B8860B;
+            }
+        }
+    </style>
 </head>
 <body>
     <div class="container">
-        <!-- Header -->
-        <div class="header">
-            <h1>KARANKA MULTIVERSE ALGO AI</h1>
-            <h2>TRIPLE STRATEGY TRADING SYSTEM</h2>
-            <div class="status-bar" id="headerStatus">
-                Not Connected
+        <h1>🏆 KARANKA MULTIVERSE ALGO AI - DERIV PRODUCTION</h1>
+        
+        <!-- Status Panel -->
+        <div class="status-panel">
+            <div class="status-item">
+                <span>CONNECTION</span>
+                <span id="connection-status" class="status-off">DISCONNECTED</span>
+            </div>
+            <div class="status-item">
+                <span>TRADING</span>
+                <span id="trading-status" class="status-off">STOPPED</span>
+            </div>
+            <div class="status-item">
+                <span>MODE</span>
+                <span id="mode-status">DRY RUN</span>
+            </div>
+            <div class="status-item">
+                <span>ACTIVE</span>
+                <span id="active-count">0</span>
+            </div>
+            <div class="status-item">
+                <span>DAILY P&L</span>
+                <span id="daily-pnl">$0.00</span>
+            </div>
+            <div class="status-item">
+                <span>WIN RATE</span>
+                <span id="win-rate">0%</span>
             </div>
         </div>
         
         <!-- Tab Navigation -->
-        <div class="tabs">
-            <button class="tab-btn active" data-tab="dashboard">📊</button>
-            <button class="tab-btn" data-tab="markets">📈</button>
-            <button class="tab-btn" data-tab="settings">⚙️</button>
-            <button class="tab-btn" data-tab="connection">🔗</button>
-            <button class="tab-btn" data-tab="monitor">👁️</button>
+        <div class="tab-container">
+            <button class="tab-button active" onclick="showTab('dashboard')">📊 DASHBOARD</button>
+            <button class="tab-button" onclick="showTab('analysis')">📈 ANALYSIS</button>
+            <button class="tab-button" onclick="showTab('markets')">📊 MARKETS</button>
+            <button class="tab-button" onclick="showTab('settings')">⚙️ SETTINGS</button>
+            <button class="tab-button" onclick="showTab('connection')">🔗 CONNECTION</button>
+            <button class="tab-button" onclick="showTab('monitor')">👁️ MONITOR</button>
         </div>
         
         <!-- Dashboard Tab -->
-        <div id="dashboard" class="tab-content active">
-            <div class="live-analysis" id="liveAnalysis">
-                <div class="analysis-header">🔍 LIVE MARKET SCAN</div>
-                <div style="text-align: center; padding: 20px; color: #666;">
-                    Connect to Deriv API to start scanning
+        <div id="dashboard-tab" class="tab-content active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-active">0</div>
+                    <div class="stat-label">ACTIVE TRADES</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-daily">0</div>
+                    <div class="stat-label">DAILY TRADES</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-pnl">$0</div>
+                    <div class="stat-label">DAILY P&L</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-winrate">0%</div>
+                    <div class="stat-label">WIN RATE</div>
                 </div>
             </div>
             
-            <div class="stats-panel" id="statsPanel">
-                <div class="stat-row">
-                    <span class="stat-label">Status:</span>
-                    <span class="stat-value">Not Connected</span>
+            <h2>🔍 ACTIVE SIGNALS</h2>
+            <div id="active-signals">
+                <div class="signal-card">
+                    <div style="text-align: center; color: #B8860B; padding: 20px;">
+                        Waiting for market analysis...
+                    </div>
                 </div>
             </div>
             
-            <div style="display: flex; gap: 8px;">
-                <button class="btn btn-primary" id="startBtn" disabled>🚀 Start Trading</button>
-                <button class="btn btn-danger" id="stopBtn" disabled>🛑 Stop</button>
+            <h2>📈 MARKET STATES</h2>
+            <div id="market-states" style="margin-bottom: 15px;">
+                <!-- Filled by JS -->
+            </div>
+            
+            <div class="button-group">
+                <button class="start-btn" onclick="startTrading()">🚀 START TRADING</button>
+                <button class="stop-btn" onclick="stopTrading()">🛑 STOP TRADING</button>
+                <button onclick="refreshData()">🔄 REFRESH</button>
+            </div>
+        </div>
+        
+        <!-- Analysis Tab -->
+        <div id="analysis-tab" class="tab-content">
+            <h2>📊 LIVE MARKET ANALYSIS</h2>
+            <div id="analysis-details">
+                <!-- Filled by JS -->
+            </div>
+            
+            <h2>📜 STRATEGY INFO</h2>
+            <div style="background: #0a0a0a; border: 1px solid #333333; border-radius: 5px; padding: 15px;">
+                <p><span style="color: #D4AF37;">✅ MARKET STATE ENGINE:</span> <span style="color: #FFED4E;">ACTIVE</span></p>
+                <p><span style="color: #D4AF37;">✅ CONTINUATION (SWAPPED):</span> <span style="color: #FFED4E;">SELL in uptrend, BUY in downtrend</span></p>
+                <p><span style="color: #D4AF37;">✅ QUASIMODO (SWAPPED):</span> <span style="color: #FFED4E;">BUY from bearish, SELL from bullish</span></p>
+                <p><span style="color: #D4AF37;">✅ 2 PIP RETEST:</span> <span style="color: #FFED4E;">ACTIVE</span></p>
+                <p><span style="color: #D4AF37;">✅ HTF STRUCTURE:</span> <span style="color: #FFED4E;">MANDATORY</span></p>
+                <p><span style="color: #D4AF37;">✅ MIN CONFIDENCE:</span> <span style="color: #FFED4E;">65%</span></p>
+                <p><span style="color: #D4AF37;">✅ FRESH PATTERNS:</span> <span style="color: #FFED4E;">MAX 8 CANDLES</span></p>
             </div>
         </div>
         
         <!-- Markets Tab -->
-        <div id="markets" class="tab-content">
-            <h3 style="color: #D4AF37; margin-bottom: 10px;">Select Markets</h3>
-            
-            <div class="market-grid" id="marketGrid">
-                <!-- Forex Majors -->
-                <div class="market-checkbox">
-                    <input type="checkbox" value="EURUSD" checked> EURUSD
-                </div>
-                <div class="market-checkbox">
-                    <input type="checkbox" value="GBPUSD" checked> GBPUSD
-                </div>
-                <div class="market-checkbox">
-                    <input type="checkbox" value="USDJPY" checked> USDJPY
-                </div>
-                <div class="market-checkbox">
-                    <input type="checkbox" value="AUDUSD" checked> AUDUSD
-                </div>
-                <div class="market-checkbox">
-                    <input type="checkbox" value="USDCAD" checked> USDCAD
-                </div>
-                <div class="market-checkbox">
-                    <input type="checkbox" value="USDCHF" checked> USDCHF
-                </div>
-                <div class="market-checkbox">
-                    <input type="checkbox" value="NZDUSD" checked> NZDUSD
-                </div>
-                
-                <!-- Commodities -->
-                <div class="market-checkbox">
-                    <input type="checkbox" value="XAUUSD" checked> XAUUSD
-                </div>
-                <div class="market-checkbox">
-                    <input type="checkbox" value="XAGUSD"> XAGUSD
-                </div>
-                
-                <!-- Indices -->
-                <div class="market-checkbox">
-                    <input type="checkbox" value="US30"> US30
-                </div>
-                <div class="market-checkbox">
-                    <input type="checkbox" value="USTEC"> USTEC
-                </div>
-                
-                <!-- Crypto -->
-                <div class="market-checkbox">
-                    <input type="checkbox" value="BTCUSD"> BTCUSD
-                </div>
+        <div id="markets-tab" class="tab-content">
+            <h2>📊 SELECT MARKETS</h2>
+            <div class="checkbox-group" id="symbols-list">
+                <!-- Filled by JS -->
             </div>
-            
-            <div style="display: flex; gap: 8px; margin: 15px 0;">
-                <button class="btn btn-primary" id="selectAllBtn">✅ Select All</button>
-                <button class="btn btn-danger" id="deselectAllBtn">❌ Deselect All</button>
+            <div class="button-group" style="margin-top: 15px;">
+                <button onclick="selectAllSymbols()">✅ SELECT ALL</button>
+                <button onclick="deselectAllSymbols()">❌ DESELECT ALL</button>
+                <button onclick="saveSymbols()">💾 SAVE SELECTION</button>
             </div>
         </div>
         
         <!-- Settings Tab -->
-        <div id="settings" class="tab-content">
-            <h3 style="color: #D4AF37; margin-bottom: 10px;">Trading Settings</h3>
+        <div id="settings-tab" class="tab-content">
+            <h2>⚙️ TRADING SETTINGS</h2>
             
-            <div class="settings-grid">
-                <div class="setting-item">
-                    <label>Max Daily Trades</label>
-                    <input type="number" id="maxDaily" value="25" min="1" max="50">
-                </div>
-                <div class="setting-item">
-                    <label>Max Hourly Trades</label>
-                    <input type="number" id="maxHourly" value="6" min="1" max="20">
-                </div>
-                <div class="setting-item">
-                    <label>Seconds Between</label>
-                    <input type="number" id="minSeconds" value="8" min="3" max="60">
-                </div>
-                <div class="setting-item">
-                    <label>Max Concurrent</label>
-                    <input type="number" id="maxConcurrent" value="5" min="1" max="10">
-                </div>
-                <div class="setting-item">
-                    <label>Lot Size</label>
-                    <input type="number" id="lotSize" value="0.01" min="0.01" max="1" step="0.01">
-                </div>
+            <div class="form-group">
+                <label>Mode:</label>
+                <select id="setting-mode">
+                    <option value="true">🟡 DRY RUN (Simulated)</option>
+                    <option value="false">🔴 LIVE (Real Money)</option>
+                </select>
             </div>
             
-            <h3 style="color: #D4AF37; margin: 15px 0 10px;">Timeframes</h3>
-            
-            <div style="background: #111; padding: 10px; border-radius: 5px;">
-                <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <label class="switch">
-                        <input type="checkbox" id="enable5m" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span style="color: #FFD700;">5M (Breakout)</span>
-                </div>
-                <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <label class="switch">
-                        <input type="checkbox" id="enable15m" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span style="color: #FFD700;">15M (Quasimodo)</span>
-                </div>
-                <div style="display: flex; align-items: center; margin-bottom: 8px;">
-                    <label class="switch">
-                        <input type="checkbox" id="enable30m" checked>
-                        <span class="slider"></span>
-                    </label>
-                    <span style="color: #FFD700;">30M (Secondary)</span>
-                </div>
+            <div class="form-group">
+                <label>Fixed Trade Amount ($):</label>
+                <input type="number" id="setting-amount" value="1.0" min="0.35" step="0.01">
             </div>
             
-            <button class="btn btn-primary" id="saveSettingsBtn" style="margin-top: 15px;">💾 Save Settings</button>
+            <div class="form-group">
+                <label>Max Daily Trades:</label>
+                <input type="number" id="setting-daily" value="20" min="1" max="50">
+            </div>
+            
+            <div class="form-group">
+                <label>Max Concurrent Trades:</label>
+                <input type="number" id="setting-concurrent" value="3" min="1" max="5">
+            </div>
+            
+            <div class="form-group">
+                <label>Min Seconds Between Trades:</label>
+                <input type="number" id="setting-seconds" value="10" min="5" max="60">
+            </div>
+            
+            <button onclick="saveSettings()">💾 SAVE SETTINGS</button>
         </div>
         
         <!-- Connection Tab -->
-        <div id="connection" class="tab-content">
-            <div class="connection-panel">
-                <h3 style="color: #D4AF37; margin-bottom: 15px;">Deriv API Connection</h3>
-                
-                <div class="input-group">
-                    <label>Account Type</label>
-                    <select id="accountType">
-                        <option value="demo">Demo Account</option>
-                        <option value="real">Real Account</option>
-                    </select>
-                </div>
-                
-                <div class="input-group">
-                    <label>API Token</label>
-                    <input type="password" id="apiToken" placeholder="Enter your Deriv API token">
-                </div>
-                
-                <button class="btn btn-primary" id="connectBtn">🔗 Connect</button>
-                
-                <div style="margin-top: 20px; padding: 10px; background: #000; border-radius: 5px; font-size: 0.8rem; color: #B8860B;">
-                    <strong>How to get API token:</strong><br>
-                    1. Log in to Deriv<br>
-                    2. Go to Settings → API Token<br>
-                    3. Generate new token with "Trade" permissions<br>
-                    4. Copy and paste above
-                </div>
-                
-                <div style="margin-top: 15px;" id="connectionStatus"></div>
+        <div id="connection-tab" class="tab-content">
+            <h2>🔗 DERIV CONNECTION</h2>
+            
+            <div class="form-group">
+                <label>API Token:</label>
+                <input type="password" id="api-token" placeholder="Enter your Deriv API token">
+            </div>
+            
+            <div class="button-group">
+                <button onclick="connectDeriv()">🔗 CONNECT</button>
+                <button onclick="disconnectDeriv()">🔌 DISCONNECT</button>
+            </div>
+            
+            <div id="connection-log" class="log-container">
+                <div>⚡ Ready to connect to Deriv...</div>
             </div>
         </div>
         
         <!-- Monitor Tab -->
-        <div id="monitor" class="tab-content">
-            <h3 style="color: #D4AF37; margin-bottom: 10px;">Active Trades</h3>
-            <div id="activeTrades" style="margin-bottom: 15px;">
-                <div style="text-align: center; padding: 20px; color: #666;">
-                    No active trades
-                </div>
+        <div id="monitor-tab" class="tab-content">
+            <h2>📊 ACTIVE TRADES</h2>
+            <div id="active-trades-list">
+                <!-- Filled by JS -->
             </div>
             
-            <h3 style="color: #D4AF37; margin-bottom: 10px;">Today's Trades</h3>
-            <div id="tradeHistory" style="margin-bottom: 15px;">
-                <div style="text-align: center; padding: 20px; color: #666;">
-                    No trades yet today
-                </div>
+            <h2>📜 TRADE HISTORY</h2>
+            <div id="trade-history-list">
+                <!-- Filled by JS -->
             </div>
+        </div>
+        
+        <!-- Footer -->
+        <div class="footer">
+            © 2025 KARANKA MULTIVERSE ALGO AI | MARKET STATE ENGINE | SMART SELECTOR | 2 PIP RETEST | PRODUCTION READY
         </div>
     </div>
     
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script>
+        // Socket.IO connection
+        const socket = io();
+        
+        // Global variables
+        let connected = false;
+        let trading = false;
+        let currentSymbols = [];
+        let enabledSymbols = [
+            "R_10", "R_25", "R_50", "R_75", "R_100",
+            "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD",
+            "US30", "US100", "BTCUSD"
+        ];
+        
+        // Socket events
+        socket.on('connect', function() {
+            console.log('Connected to server');
+            socket.emit('request_update');
+        });
+        
+        socket.on('market_update', function(data) {
+            updateMarketAnalysis(data);
+        });
+        
+        socket.on('trade_update', function(data) {
+            updateTradeData(data);
+        });
+        
+        // Tab switching
+        function showTab(tabName) {
+            document.querySelectorAll('.tab-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            document.querySelectorAll('.tab-content').forEach(tab => {
+                tab.classList.remove('active');
+            });
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }
+        
+        // Connection functions
+        function connectDeriv() {
+            const token = document.getElementById('api-token').value;
+            if (!token) {
+                alert('Please enter API token');
+                return;
+            }
+            
+            addLog('🔌 Connecting to Deriv...');
+            
+            fetch('/api/connect', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({token: token})
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    connected = true;
+                    document.getElementById('connection-status').innerHTML = 'CONNECTED';
+                    document.getElementById('connection-status').className = 'status-on';
+                    addLog('✅ ' + data.message);
+                    loadSymbols();
+                } else {
+                    addLog('❌ ' + data.message);
+                }
+            })
+            .catch(err => {
+                addLog('❌ Connection error: ' + err);
+            });
+        }
+        
+        function disconnectDeriv() {
+            fetch('/api/disconnect', {method: 'POST'})
+            .then(res => res.json())
+            .then(data => {
+                connected = false;
+                trading = false;
+                document.getElementById('connection-status').innerHTML = 'DISCONNECTED';
+                document.getElementById('connection-status').className = 'status-off';
+                document.getElementById('trading-status').innerHTML = 'STOPPED';
+                document.getElementById('trading-status').className = 'status-off';
+                addLog('🔌 Disconnected');
+            });
+        }
+        
+        function addLog(message) {
+            const log = document.getElementById('connection-log');
+            const time = new Date().toLocaleTimeString();
+            log.innerHTML = `<div>[${time}] ${message}</div>` + log.innerHTML;
+            if (log.children.length > 10) {
+                log.removeChild(log.lastChild);
+            }
+        }
+        
+        // Trading functions
+        function startTrading() {
+            if (!connected) {
+                alert('Connect to Deriv first!');
+                return;
+            }
+            
+            const settings = {
+                dry_run: document.getElementById('setting-mode').value === 'true',
+                fixed_amount: parseFloat(document.getElementById('setting-amount').value),
+                max_daily_trades: parseInt(document.getElementById('setting-daily').value),
+                max_concurrent_trades: parseInt(document.getElementById('setting-concurrent').value),
+                enabled_symbols: enabledSymbols
+            };
+            
+            fetch('/api/start', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(settings)
+            })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    trading = true;
+                    document.getElementById('trading-status').innerHTML = 'ACTIVE';
+                    document.getElementById('trading-status').className = 'status-on';
+                    document.getElementById('mode-status').innerHTML = settings.dry_run ? 'DRY RUN' : 'LIVE';
+                    addLog('🚀 ' + data.message);
+                } else {
+                    alert('Failed to start: ' + data.message);
+                }
+            });
+        }
+        
+        function stopTrading() {
+            fetch('/api/stop', {method: 'POST'})
+            .then(res => res.json())
+            .then(data => {
+                trading = false;
+                document.getElementById('trading-status').innerHTML = 'STOPPED';
+                document.getElementById('trading-status').className = 'status-off';
+                addLog('🛑 Trading stopped');
+            });
+        }
+        
+        function refreshData() {
+            socket.emit('request_update');
+        }
+        
+        // Symbols management
+        function loadSymbols() {
+            fetch('/api/symbols')
+            .then(res => res.json())
+            .then(data => {
+                if (data.success && data.symbols.length > 0) {
+                    currentSymbols = data.symbols;
+                    renderSymbolsList();
+                }
+            });
+        }
+        
+        function renderSymbolsList() {
+            const container = document.getElementById('symbols-list');
+            if (!container) return;
+            
+            let html = '';
+            
+            // Group by market
+            const markets = {};
+            currentSymbols.forEach(s => {
+                if (!markets[s.market]) markets[s.market] = [];
+                markets[s.market].push(s);
+            });
+            
+            for (const [market, symbols] of Object.entries(markets)) {
+                html += `<div style="color: #D4AF37; margin: 10px 0 5px; text-transform: uppercase;">${market}</div>`;
+                symbols.slice(0, 20).forEach(s => {
+                    const checked = enabledSymbols.includes(s.symbol) ? 'checked' : '';
+                    html += `
+                        <div class="checkbox-item">
+                            <input type="checkbox" class="symbol-checkbox" value="${s.symbol}" ${checked}>
+                            <span>${s.display_name || s.symbol}</span>
+                        </div>
+                    `;
+                });
+            }
+            
+            container.innerHTML = html;
+        }
+        
+        function selectAllSymbols() {
+            document.querySelectorAll('.symbol-checkbox').forEach(cb => {
+                cb.checked = true;
+            });
+        }
+        
+        function deselectAllSymbols() {
+            document.querySelectorAll('.symbol-checkbox').forEach(cb => {
+                cb.checked = false;
+            });
+        }
+        
+        function saveSymbols() {
+            enabledSymbols = [];
+            document.querySelectorAll('.symbol-checkbox:checked').forEach(cb => {
+                enabledSymbols.push(cb.value);
+            });
+            
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({enabled_symbols: enabledSymbols})
+            });
+            
+            alert(`✅ ${enabledSymbols.length} symbols selected`);
+        }
+        
+        // Settings
+        function saveSettings() {
+            const settings = {
+                dry_run: document.getElementById('setting-mode').value === 'true',
+                fixed_amount: parseFloat(document.getElementById('setting-amount').value),
+                max_daily_trades: parseInt(document.getElementById('setting-daily').value),
+                max_concurrent_trades: parseInt(document.getElementById('setting-concurrent').value)
+            };
+            
+            fetch('/api/settings', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify(settings)
+            })
+            .then(res => res.json())
+            .then(data => {
+                alert('✅ Settings saved');
+            });
+        }
+        
+        // Update functions
+        function updateMarketAnalysis(data) {
+            const analysis = data.market_analysis || {};
+            const signalsContainer = document.getElementById('active-signals');
+            const statesContainer = document.getElementById('market-states');
+            const analysisDetails = document.getElementById('analysis-details');
+            
+            // Count market states
+            const stateCount = {};
+            let signals = [];
+            
+            for (const [symbol, info] of Object.entries(analysis)) {
+                if (info.signals && info.signals.length > 0) {
+                    signals.push({symbol, ...info});
+                }
+                if (info.market_state) {
+                    stateCount[info.market_state] = (stateCount[info.market_state] || 0) + 1;
+                }
+            }
+            
+            // Update active signals
+            if (signals.length > 0) {
+                let signalsHtml = '';
+                signals.forEach(s => {
+                    s.signals.forEach(signal => {
+                        signalsHtml += `
+                            <div class="signal-card">
+                                <div class="signal-header">
+                                    <span class="signal-symbol">${s.symbol}</span>
+                                    <span class="signal-type ${signal.type.toLowerCase()}">${signal.type}</span>
+                                </div>
+                                <div class="signal-details">
+                                    <div class="signal-detail">
+                                        <span class="label">Strategy</span>
+                                        <span class="value">${signal.strategy}</span>
+                                    </div>
+                                    <div class="signal-detail">
+                                        <span class="label">Pattern</span>
+                                        <span class="value">${signal.pattern}</span>
+                                    </div>
+                                    <div class="signal-detail">
+                                        <span class="label">Entry</span>
+                                        <span class="value">${signal.entry ? signal.entry.toFixed(5) : 'N/A'}</span>
+                                    </div>
+                                    <div class="signal-detail">
+                                        <span class="label">SL/TP</span>
+                                        <span class="value">${signal.sl ? signal.sl.toFixed(5) : 'N/A'} / ${signal.tp ? signal.tp.toFixed(5) : 'N/A'}</span>
+                                    </div>
+                                </div>
+                                <div class="signal-confidence">
+                                    <div class="confidence-bar" style="width: ${signal.confidence}%"></div>
+                                </div>
+                                <div style="display: flex; justify-content: space-between; margin-top: 5px; font-size: 0.8rem;">
+                                    <span style="color: #B8860B;">Market: ${s.market_state}</span>
+                                    <span style="color: ${signal.confidence >= 80 ? '#00FF00' : '#FFD700'};">Conf: ${signal.confidence}%</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                });
+                signalsContainer.innerHTML = signalsHtml;
+            } else {
+                signalsContainer.innerHTML = `
+                    <div class="signal-card">
+                        <div style="text-align: center; color: #B8860B; padding: 20px;">
+                            ⏳ Scanning markets for setups...
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // Update market states
+            let statesHtml = '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+            for (const [state, count] of Object.entries(stateCount)) {
+                statesHtml += `<span class="market-state-badge">${state}: ${count}</span>`;
+            }
+            statesHtml += '</div>';
+            if (statesContainer) statesContainer.innerHTML = statesHtml;
+            
+            // Update analysis details
+            if (analysisDetails) {
+                let detailsHtml = '';
+                for (const [symbol, info] of Object.entries(analysis).slice(0, 10)) {
+                    detailsHtml += `
+                        <div class="signal-card">
+                            <div style="display: flex; justify-content: space-between;">
+                                <span style="color: #FFD700; font-weight: bold;">${symbol}</span>
+                                <span style="color: #B8860B;">${info.market_state || 'SCANNING'}</span>
+                            </div>
+                            <div style="font-size: 0.9rem; margin-top: 5px;">
+                                <div>Price: ${info.price ? info.price.toFixed(5) : 'N/A'}</div>
+                                <div>Structure: ${info.structure || 'N/A'}</div>
+                                <div>Strength: ${info.strength ? info.strength.toFixed(1) : '0'}</div>
+                            </div>
+                        </div>
+                    `;
+                }
+                analysisDetails.innerHTML = detailsHtml;
+            }
+        }
+        
+        function updateTradeData(data) {
+            document.getElementById('active-count').innerHTML = data.active_trades?.length || 0;
+            document.getElementById('stat-active').innerHTML = data.active_trades?.length || 0;
+            document.getElementById('stat-daily').innerHTML = data.daily_trades || 0;
+            
+            const pnl = data.daily_pnl || 0;
+            document.getElementById('daily-pnl').innerHTML = `$${pnl.toFixed(2)}`;
+            document.getElementById('stat-pnl').innerHTML = `$${pnl.toFixed(2)}`;
+            
+            document.getElementById('win-rate').innerHTML = (data.win_rate || 0) + '%';
+            document.getElementById('stat-winrate').innerHTML = (data.win_rate || 0) + '%';
+            
+            // Update active trades list
+            const activeList = document.getElementById('active-trades-list');
+            if (activeList) {
+                if (data.active_trades?.length > 0) {
+                    let html = '';
+                    data.active_trades.forEach(t => {
+                        html += `
+                            <div class="signal-card">
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span style="color: #FFD700;">${t.symbol}</span>
+                                    <span class="signal-type ${t.direction ? t.direction.toLowerCase() : 'buy'}">${t.direction || 'BUY'}</span>
+                                </div>
+                                <div style="font-size: 0.85rem; margin-top: 5px;">
+                                    <div>Entry: ${t.entry ? t.entry.toFixed(5) : 'N/A'}</div>
+                                    <div>Amount: $${t.amount || 0}</div>
+                                    <div>Confidence: ${t.confidence || 70}%</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    activeList.innerHTML = html;
+                } else {
+                    activeList.innerHTML = '<div style="color: #B8860B; text-align: center; padding: 20px;">No active trades</div>';
+                }
+            }
+            
+            // Update trade history
+            const historyList = document.getElementById('trade-history-list');
+            if (historyList) {
+                const history = data.trade_history || [];
+                if (history.length > 0) {
+                    let html = '';
+                    history.slice(-10).reverse().forEach(t => {
+                        html += `
+                            <div class="signal-card">
+                                <div style="display: flex; justify-content: space-between;">
+                                    <span style="color: #FFD700;">${t.symbol}</span>
+                                    <span class="${t.result === 'WIN' ? 'trade-profit' : 'trade-loss'}">${t.result || 'UNKNOWN'}</span>
+                                </div>
+                                <div style="font-size: 0.85rem;">
+                                    <div>Profit: $${t.profit ? t.profit.toFixed(2) : '0.00'}</div>
+                                    <div>Strategy: ${t.strategy || 'QUASIMODO'}</div>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    historyList.innerHTML = html;
+                } else {
+                    historyList.innerHTML = '<div style="color: #B8860B; text-align: center; padding: 20px;">No trade history</div>';
+                }
+            }
+        }
+        
+        // Auto-refresh
+        setInterval(() => {
+            if (connected) {
+                socket.emit('request_update');
+            }
+        }, 5000);
+        
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            // Set default settings
+            document.getElementById('setting-mode').value = 'true';
+        });
+    </script>
 </body>
 </html>
