@@ -1,0 +1,25 @@
+services:
+  - type: web
+    name: karanka-multiverse-deriv
+    runtime: python
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn -k eventlet -w 1 app:app
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.9.18
+      - key: SECRET_KEY
+        generateValue: true
+      - key: FLASK_ENV
+        value: production
+      - key: DERIV_APP_ID
+        value: 1089
+      - key: MAX_DAILY_TRADES
+        value: 20
+      - key: MAX_CONCURRENT_TRADES
+        value: 3
+      - key: FIXED_AMOUNT
+        value: 1.0
+    autoDeploy: true
+    healthCheckPath: /health
+    plan: free  # Change to starter for 24/7
