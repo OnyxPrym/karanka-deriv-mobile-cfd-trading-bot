@@ -303,9 +303,9 @@
         
         .checkbox-group {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(100px, 1fr));
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
             gap: 8px;
-            max-height: 300px;
+            max-height: 500px;
             overflow-y: auto;
             padding: 10px;
             background: #0a0a0a;
@@ -319,11 +319,33 @@
             gap: 5px;
             color: #FFD700;
             font-size: 0.9rem;
+            padding: 3px;
+        }
+        
+        .checkbox-item:hover {
+            background: #1a1a1a;
+            border-radius: 3px;
         }
         
         .checkbox-item input[type="checkbox"] {
             width: auto;
             margin-right: 5px;
+            accent-color: #FFD700;
+        }
+        
+        .market-category {
+            grid-column: 1 / -1;
+            color: #D4AF37;
+            font-weight: bold;
+            margin-top: 15px;
+            margin-bottom: 5px;
+            border-bottom: 1px solid #FFD700;
+            padding-bottom: 5px;
+            font-size: 1rem;
+        }
+        
+        .market-category:first-of-type {
+            margin-top: 0;
         }
         
         .stats-grid {
@@ -362,6 +384,7 @@
             border-radius: 12px;
             font-size: 0.75rem;
             font-weight: bold;
+            margin: 2px;
         }
         
         .log-container {
@@ -385,6 +408,32 @@
             font-size: 0.8rem;
         }
         
+        .selection-buttons {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+            padding: 10px;
+            background: #0a0a0a;
+            border: 1px solid #FFD700;
+            border-radius: 5px;
+        }
+        
+        .selection-btn {
+            background: #8B7500;
+            padding: 8px 12px;
+            font-size: 0.9rem;
+            margin: 0;
+        }
+        
+        .selection-btn.select-all {
+            background: #006400;
+        }
+        
+        .selection-btn.deselect-all {
+            background: #8B0000;
+        }
+        
         @media (max-width: 768px) {
             .container {
                 padding: 8px;
@@ -403,19 +452,16 @@
                 grid-template-columns: 1fr 1fr;
             }
             
-            .trade-row {
+            .checkbox-group {
                 grid-template-columns: 1fr 1fr;
-                gap: 8px;
             }
             
-            .trade-header {
-                display: none;
+            .selection-buttons {
+                flex-direction: column;
             }
             
-            .trade-row:before {
-                content: attr(data-label);
-                font-weight: bold;
-                color: #B8860B;
+            .selection-btn {
+                width: 100%;
             }
         }
     </style>
@@ -520,19 +566,263 @@
                 <p><span style="color: #D4AF37;">✅ HTF STRUCTURE:</span> <span style="color: #FFED4E;">MANDATORY</span></p>
                 <p><span style="color: #D4AF37;">✅ MIN CONFIDENCE:</span> <span style="color: #FFED4E;">65%</span></p>
                 <p><span style="color: #D4AF37;">✅ FRESH PATTERNS:</span> <span style="color: #FFED4E;">MAX 8 CANDLES</span></p>
+                <p><span style="color: #D4AF37;">✅ TOTAL MARKETS:</span> <span style="color: #FFED4E;">30+ CFD & SYNTHETICS</span></p>
             </div>
         </div>
         
         <!-- Markets Tab -->
         <div id="markets-tab" class="tab-content">
-            <h2>📊 SELECT MARKETS</h2>
-            <div class="checkbox-group" id="symbols-list">
-                <!-- Filled by JS -->
+            <h2>📊 SELECT MARKETS (30+ CFD & SYNTHETICS)</h2>
+            
+            <div class="selection-buttons">
+                <button class="selection-btn" onclick="selectAllSynthetics()">🎲 Select All Synthetics</button>
+                <button class="selection-btn" onclick="selectAllForex()">💱 Select All Forex</button>
+                <button class="selection-btn" onclick="selectAllIndices()">📊 Select All Indices</button>
+                <button class="selection-btn" onclick="selectAllCommodities()">🪙 Select All Commodities</button>
+                <button class="selection-btn" onclick="selectAllCrypto()">₿ Select All Crypto</button>
+                <button class="selection-btn select-all" onclick="selectAllSymbols()">✅ SELECT ALL</button>
+                <button class="selection-btn deselect-all" onclick="deselectAllSymbols()">❌ DESELECT ALL</button>
             </div>
-            <div class="button-group" style="margin-top: 15px;">
-                <button onclick="selectAllSymbols()">✅ SELECT ALL</button>
-                <button onclick="deselectAllSymbols()">❌ DESELECT ALL</button>
-                <button onclick="saveSymbols()">💾 SAVE SELECTION</button>
+            
+            <div class="checkbox-group" id="markets-list">
+                <!-- ============ SYNTHETICS ============ -->
+                <div class="market-category">🎲 VOLATILITY INDICES (10)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="R_10" checked>
+                    <span>R_10 - Volatility 10</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="R_25" checked>
+                    <span>R_25 - Volatility 25</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="R_50" checked>
+                    <span>R_50 - Volatility 50</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="R_75" checked>
+                    <span>R_75 - Volatility 75</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="R_100" checked>
+                    <span>R_100 - Volatility 100</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="R_150" checked>
+                    <span>R_150 - Volatility 150</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="R_200" checked>
+                    <span>R_200 - Volatility 200</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="R_250" checked>
+                    <span>R_250 - Volatility 250</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="VR10" checked>
+                    <span>VR10 - Volatility 10 (1s)</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="VR100" checked>
+                    <span>VR100 - Volatility 100 (1s)</span>
+                </div>
+                
+                <!-- ============ JUMP INDICES ============ -->
+                <div class="market-category">🦘 JUMP INDICES (4)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="J_10" checked>
+                    <span>J_10 - Jump 10</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="J_25" checked>
+                    <span>J_25 - Jump 25</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="J_50" checked>
+                    <span>J_50 - Jump 50</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="J_100" checked>
+                    <span>J_100 - Jump 100</span>
+                </div>
+                
+                <!-- ============ CRASH/BOOM ============ -->
+                <div class="market-category">💥 CRASH & BOOM (4)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="BOOM300" checked>
+                    <span>BOOM300 - Boom 300</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="BOOM500" checked>
+                    <span>BOOM500 - Boom 500</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="CRASH300" checked>
+                    <span>CRASH300 - Crash 300</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="CRASH500" checked>
+                    <span>CRASH500 - Crash 500</span>
+                </div>
+                
+                <!-- ============ STEP INDICES ============ -->
+                <div class="market-category">🪜 STEP INDICES (3)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="STP10" checked>
+                    <span>STP10 - Step 10</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="STP50" checked>
+                    <span>STP50 - Step 50</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox synth" value="STP100" checked>
+                    <span>STP100 - Step 100</span>
+                </div>
+                
+                <!-- ============ FOREX MAJORS ============ -->
+                <div class="market-category">💱 FOREX MAJORS (7)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="EURUSD" checked>
+                    <span>EURUSD - Euro/US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="GBPUSD" checked>
+                    <span>GBPUSD - British Pound/US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="USDJPY" checked>
+                    <span>USDJPY - US Dollar/Japanese Yen</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="AUDUSD" checked>
+                    <span>AUDUSD - Australian Dollar/US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="USDCAD" checked>
+                    <span>USDCAD - US Dollar/Canadian Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="USDCHF" checked>
+                    <span>USDCHF - US Dollar/Swiss Franc</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="NZDUSD" checked>
+                    <span>NZDUSD - New Zealand Dollar/US Dollar</span>
+                </div>
+                
+                <!-- ============ FOREX MINORS ============ -->
+                <div class="market-category">💱 FOREX MINORS & CROSSES (8)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="EURGBP" checked>
+                    <span>EURGBP - Euro/British Pound</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="EURJPY" checked>
+                    <span>EURJPY - Euro/Japanese Yen</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="GBPJPY" checked>
+                    <span>GBPJPY - British Pound/Japanese Yen</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="AUDJPY" checked>
+                    <span>AUDJPY - Australian Dollar/Japanese Yen</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="EURAUD" checked>
+                    <span>EURAUD - Euro/Australian Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="GBPAUD" checked>
+                    <span>GBPAUD - British Pound/Australian Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="CADJPY" checked>
+                    <span>CADJPY - Canadian Dollar/Japanese Yen</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox forex" value="CHFJPY" checked>
+                    <span>CHFJPY - Swiss Franc/Japanese Yen</span>
+                </div>
+                
+                <!-- ============ INDICES ============ -->
+                <div class="market-category">📊 STOCK INDICES (5)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox index" value="US30" checked>
+                    <span>US30 - US Wall Street 30</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox index" value="US100" checked>
+                    <span>US100 - US Nasdaq 100</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox index" value="US500" checked>
+                    <span>US500 - US S&P 500</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox index" value="UK100" checked>
+                    <span>UK100 - UK FTSE 100</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox index" value="GER40" checked>
+                    <span>GER40 - Germany DAX 40</span>
+                </div>
+                
+                <!-- ============ COMMODITIES ============ -->
+                <div class="market-category">🪙 COMMODITIES (4)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox commodity" value="XAUUSD" checked>
+                    <span>XAUUSD - Gold vs US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox commodity" value="XAGUSD" checked>
+                    <span>XAGUSD - Silver vs US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox commodity" value="XPTUSD" checked>
+                    <span>XPTUSD - Platinum vs US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox commodity" value="XPDUSD" checked>
+                    <span>XPDUSD - Palladium vs US Dollar</span>
+                </div>
+                
+                <!-- ============ CRYPTO ============ -->
+                <div class="market-category">₿ CRYPTOCURRENCY (4)</div>
+                
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox crypto" value="BTCUSD" checked>
+                    <span>BTCUSD - Bitcoin vs US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox crypto" value="ETHUSD" checked>
+                    <span>ETHUSD - Ethereum vs US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox crypto" value="LTCUSD" checked>
+                    <span>LTCUSD - Litecoin vs US Dollar</span>
+                </div>
+                <div class="checkbox-item">
+                    <input type="checkbox" class="symbol-checkbox crypto" value="BCHUSD" checked>
+                    <span>BCHUSD - Bitcoin Cash vs US Dollar</span>
+                </div>
+            </div>
+            
+            <div style="margin-top: 15px; padding: 10px; background: #0a0a0a; border: 1px solid #FFD700; border-radius: 5px;">
+                <div style="display: flex; justify-content: space-between; align-items: center;">
+                    <span style="color: #FFD700;">Selected: <span id="selected-count">30</span> markets</span>
+                    <button onclick="saveSymbols()" style="background: #006400; padding: 10px 20px;">💾 SAVE SELECTION</button>
+                </div>
             </div>
         </div>
         
@@ -566,6 +856,11 @@
             <div class="form-group">
                 <label>Min Seconds Between Trades:</label>
                 <input type="number" id="setting-seconds" value="10" min="5" max="60">
+            </div>
+            
+            <div class="form-group">
+                <label>Minimum Confidence %:</label>
+                <input type="number" id="setting-confidence" value="65" min="50" max="95">
             </div>
             
             <button onclick="saveSettings()">💾 SAVE SETTINGS</button>
@@ -605,7 +900,7 @@
         
         <!-- Footer -->
         <div class="footer">
-            © 2025 KARANKA MULTIVERSE ALGO AI | MARKET STATE ENGINE | SMART SELECTOR | 2 PIP RETEST | PRODUCTION READY
+            © 2025 KARANKA MULTIVERSE ALGO AI | MARKET STATE ENGINE | SMART SELECTOR | 2 PIP RETEST | 30+ MARKETS
         </div>
     </div>
     
@@ -616,12 +911,7 @@
         // Global variables
         let connected = false;
         let trading = false;
-        let currentSymbols = [];
-        let enabledSymbols = [
-            "R_10", "R_25", "R_50", "R_75", "R_100",
-            "EURUSD", "GBPUSD", "USDJPY", "XAUUSD", "XAGUSD",
-            "US30", "US100", "BTCUSD"
-        ];
+        let enabledSymbols = [];
         
         // Socket events
         socket.on('connect', function() {
@@ -672,7 +962,6 @@
                     document.getElementById('connection-status').innerHTML = 'CONNECTED';
                     document.getElementById('connection-status').className = 'status-on';
                     addLog('✅ ' + data.message);
-                    loadSymbols();
                 } else {
                     addLog('❌ ' + data.message);
                 }
@@ -712,11 +1001,23 @@
                 return;
             }
             
+            // Get selected symbols
+            enabledSymbols = [];
+            document.querySelectorAll('.symbol-checkbox:checked').forEach(cb => {
+                enabledSymbols.push(cb.value);
+            });
+            
+            if (enabledSymbols.length === 0) {
+                alert('Please select at least one market in the Markets tab');
+                return;
+            }
+            
             const settings = {
                 dry_run: document.getElementById('setting-mode').value === 'true',
                 fixed_amount: parseFloat(document.getElementById('setting-amount').value),
                 max_daily_trades: parseInt(document.getElementById('setting-daily').value),
                 max_concurrent_trades: parseInt(document.getElementById('setting-concurrent').value),
+                min_confidence: parseInt(document.getElementById('setting-confidence').value),
                 enabled_symbols: enabledSymbols
             };
             
@@ -754,57 +1055,59 @@
             socket.emit('request_update');
         }
         
-        // Symbols management
-        function loadSymbols() {
-            fetch('/api/symbols')
-            .then(res => res.json())
-            .then(data => {
-                if (data.success && data.symbols.length > 0) {
-                    currentSymbols = data.symbols;
-                    renderSymbolsList();
-                }
-            });
+        // Market selection functions
+        function updateSelectedCount() {
+            const count = document.querySelectorAll('.symbol-checkbox:checked').length;
+            document.getElementById('selected-count').innerHTML = count;
         }
         
-        function renderSymbolsList() {
-            const container = document.getElementById('symbols-list');
-            if (!container) return;
-            
-            let html = '';
-            
-            // Group by market
-            const markets = {};
-            currentSymbols.forEach(s => {
-                if (!markets[s.market]) markets[s.market] = [];
-                markets[s.market].push(s);
+        function selectAllSynthetics() {
+            document.querySelectorAll('.symbol-checkbox.synth').forEach(cb => {
+                cb.checked = true;
             });
-            
-            for (const [market, symbols] of Object.entries(markets)) {
-                html += `<div style="color: #D4AF37; margin: 10px 0 5px; text-transform: uppercase;">${market}</div>`;
-                symbols.slice(0, 20).forEach(s => {
-                    const checked = enabledSymbols.includes(s.symbol) ? 'checked' : '';
-                    html += `
-                        <div class="checkbox-item">
-                            <input type="checkbox" class="symbol-checkbox" value="${s.symbol}" ${checked}>
-                            <span>${s.display_name || s.symbol}</span>
-                        </div>
-                    `;
-                });
-            }
-            
-            container.innerHTML = html;
+            updateSelectedCount();
+        }
+        
+        function selectAllForex() {
+            document.querySelectorAll('.symbol-checkbox.forex').forEach(cb => {
+                cb.checked = true;
+            });
+            updateSelectedCount();
+        }
+        
+        function selectAllIndices() {
+            document.querySelectorAll('.symbol-checkbox.index').forEach(cb => {
+                cb.checked = true;
+            });
+            updateSelectedCount();
+        }
+        
+        function selectAllCommodities() {
+            document.querySelectorAll('.symbol-checkbox.commodity').forEach(cb => {
+                cb.checked = true;
+            });
+            updateSelectedCount();
+        }
+        
+        function selectAllCrypto() {
+            document.querySelectorAll('.symbol-checkbox.crypto').forEach(cb => {
+                cb.checked = true;
+            });
+            updateSelectedCount();
         }
         
         function selectAllSymbols() {
             document.querySelectorAll('.symbol-checkbox').forEach(cb => {
                 cb.checked = true;
             });
+            updateSelectedCount();
         }
         
         function deselectAllSymbols() {
             document.querySelectorAll('.symbol-checkbox').forEach(cb => {
                 cb.checked = false;
             });
+            updateSelectedCount();
         }
         
         function saveSymbols() {
@@ -819,7 +1122,7 @@
                 body: JSON.stringify({enabled_symbols: enabledSymbols})
             });
             
-            alert(`✅ ${enabledSymbols.length} symbols selected`);
+            alert(`✅ ${enabledSymbols.length} markets selected and saved`);
         }
         
         // Settings
@@ -828,7 +1131,9 @@
                 dry_run: document.getElementById('setting-mode').value === 'true',
                 fixed_amount: parseFloat(document.getElementById('setting-amount').value),
                 max_daily_trades: parseInt(document.getElementById('setting-daily').value),
-                max_concurrent_trades: parseInt(document.getElementById('setting-concurrent').value)
+                max_concurrent_trades: parseInt(document.getElementById('setting-concurrent').value),
+                min_seconds_between: parseInt(document.getElementById('setting-seconds').value),
+                min_confidence: parseInt(document.getElementById('setting-confidence').value)
             };
             
             fetch('/api/settings', {
@@ -907,7 +1212,7 @@
                 signalsContainer.innerHTML = `
                     <div class="signal-card">
                         <div style="text-align: center; color: #B8860B; padding: 20px;">
-                            ⏳ Scanning markets for setups...
+                            ⏳ Scanning ${enabledSymbols.length} markets for setups...
                         </div>
                     </div>
                 `;
@@ -924,7 +1229,7 @@
             // Update analysis details
             if (analysisDetails) {
                 let detailsHtml = '';
-                for (const [symbol, info] of Object.entries(analysis).slice(0, 10)) {
+                for (const [symbol, info] of Object.entries(analysis).slice(0, 15)) {
                     detailsHtml += `
                         <div class="signal-card">
                             <div style="display: flex; justify-content: space-between;">
@@ -1019,6 +1324,19 @@
         document.addEventListener('DOMContentLoaded', function() {
             // Set default settings
             document.getElementById('setting-mode').value = 'true';
+            document.getElementById('setting-amount').value = '1.0';
+            document.getElementById('setting-daily').value = '20';
+            document.getElementById('setting-concurrent').value = '3';
+            document.getElementById('setting-seconds').value = '10';
+            document.getElementById('setting-confidence').value = '65';
+            
+            // Update selected count
+            updateSelectedCount();
+            
+            // Add change listeners to checkboxes
+            document.querySelectorAll('.symbol-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateSelectedCount);
+            });
         });
     </script>
 </body>
