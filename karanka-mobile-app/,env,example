@@ -1,0 +1,11 @@
+# Flask Settings
+SECRET_KEY=your-super-secret-key-change-this-in-production
+FLASK_ENV=production
+
+# Deriv Settings
+DERIV_APP_ID=1089
+
+# Bot Settings
+MAX_DAILY_TRADES=20
+MAX_CONCURRENT_TRADES=3
+FIXED_AMOUNT=1.0
