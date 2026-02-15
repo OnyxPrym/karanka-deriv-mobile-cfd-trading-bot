@@ -10,7 +10,7 @@ KARANKA MULTIVERSE ALGO AI - DERIV PRODUCTION BOT
 ✅ SMART SELECTOR - Your proven strategy
 ✅ 2 PIP RETEST - Precision entries
 ✅ HTF STRUCTURE - MANDATORY
-✅ FIXED DERIV CONNECTION - Raw token authentication
+✅ FIXED DERIV CONNECTION - Accepts ANY token format EXACTLY as provided
 ✅ PRODUCTION READY - Deployed on Render
 ================================================================================
 """
@@ -71,9 +71,9 @@ class MarketState(Enum):
     BREAKOUT_BEAR = "BREAKOUT_BEAR"
     CHOPPY = "CHOPPY"
 
-# ============ DERIV API CONNECTOR - FIXED VERSION ============
+# ============ DERIV API CONNECTOR - ABSOLUTELY FIXED VERSION ============
 class DerivAPI:
-    """Production-ready Deriv WebSocket API - FIXED authentication"""
+    """Production-ready Deriv WebSocket API - FIXED to accept ANY token format EXACTLY as provided"""
     
     def __init__(self):
         self.ws = None
@@ -91,12 +91,13 @@ class DerivAPI:
         return self.req_id
     
     def connect(self, token):
-        """Connect to Deriv with automatic reconnection"""
-        self.token = token.strip()  # Clean the token
+        """Connect to Deriv - accepts token EXACTLY as user provides (no modifications)"""
+        self.token = token  # Use EXACTLY what user entered - NO CHANGES!
+        logger.info(f"Connecting with token: {self.token[:4]}...{self.token[-4:]} (length: {len(self.token)})")
         return self._connect_with_retry()
     
     def _connect_with_retry(self, max_retries=3):
-        """Connect with retry logic - SENDS RAW TOKEN (FIXED)"""
+        """Connect with retry logic - sends token EXACTLY as received - NO MODIFICATIONS!"""
         for attempt in range(max_retries):
             try:
                 logger.info(f"Connecting to Deriv (attempt {attempt + 1}/{max_retries})")
@@ -108,10 +109,10 @@ class DerivAPI:
                     enable_multithread=True
                 )
                 
-                # CRITICAL FIX: Send token as RAW string, NOT JSON!
-                clean_token = self.token.strip()
-                logger.info(f"Sending token (length: {len(clean_token)})")
-                self.ws.send(clean_token)  # ✅ JUST THE TOKEN, NO JSON!
+                # CRITICAL: Send token EXACTLY as received - NO .strip() NO modifications!
+                # If user entered "9oj1mT1uv7wtP4b", send "9oj1mT1uv7wtP4b" exactly
+                logger.info(f"Sending raw token (no modifications)...")
+                self.ws.send(self.token)  # Send EXACT string - no JSON, no wrapping!
                 
                 # Get response
                 response = self.ws.recv()
@@ -123,13 +124,14 @@ class DerivAPI:
                 # Check for success
                 if 'authorize' in response_data:
                     self.connected = True
-                    logger.info("✅ Connected to Deriv successfully")
+                    loginid = response_data['authorize'].get('loginid', 'Unknown')
+                    logger.info(f"✅ Connected to Deriv successfully as {loginid}")
                     
                     # Start heartbeat
                     self._start_heartbeat()
                     self._start_message_listener()
                     
-                    return True, "Connected successfully"
+                    return True, f"Connected as {loginid}"
                 
                 elif 'error' in response_data:
                     error_msg = response_data['error'].get('message', 'Unknown error')
@@ -178,7 +180,7 @@ class DerivAPI:
         thread.start()
     
     def _start_message_listener(self):
-        """Listen for incoming messages"""
+        """Listen for incoming messages with auto-reconnect"""
         def listener():
             while self.connected and self.ws:
                 try:
@@ -200,6 +202,7 @@ class DerivAPI:
                         logger.error(f"Message listener error: {e}")
                     break
             
+            # Auto-reconnect if disconnected
             if not self.connected and self.token:
                 logger.info("Attempting to reconnect...")
                 time.sleep(5)
@@ -216,6 +219,7 @@ class DerivAPI:
         
         cache_key = f"{symbol}_{granularity}"
         
+        # Check cache (5 second cache)
         if cache_key in self.candles_cache:
             cache_time, cache_data = self.candles_cache[cache_key]
             if time.time() - cache_time < 5:
@@ -237,6 +241,7 @@ class DerivAPI:
                 logger.error(f"Error getting candles for {symbol}: {response['error']}")
                 return None
             
+            # Format candles
             candles = []
             for candle in response.get('candles', []):
                 candles.append({
@@ -249,7 +254,10 @@ class DerivAPI:
                 })
             
             df = pd.DataFrame(candles)
+            
+            # Cache the result
             self.candles_cache[cache_key] = (time.time(), df)
+            
             return df
             
         except Exception as e:
@@ -271,6 +279,7 @@ class DerivAPI:
             response = json.loads(self.ws.recv())
             
             if 'error' in response:
+                logger.error(f"Error getting symbols: {response['error']}")
                 return []
             
             symbols = []
@@ -292,7 +301,9 @@ class DerivAPI:
                         'submarket': item.get('submarket', '')
                     })
             
+            # Sort by market then symbol
             symbols.sort(key=lambda x: (x['market'], x['symbol']))
+            
             return symbols
             
         except Exception as e:
@@ -334,6 +345,7 @@ class DerivAPI:
             contract_id = response['buy'].get('contract_id')
             entry_price = float(response['buy'].get('price', 0))
             
+            # Store active contract
             self.active_contracts[contract_id] = {
                 'symbol': symbol,
                 'direction': direction,
@@ -429,24 +441,38 @@ class MarketStateEngine:
             }
         
         try:
+            # Calculate indicators
             df = self._calculate_indicators(df)
+            
+            # Get current values
             current_price = df['close'].iloc[-1]
             ema_20 = df['ema_20'].iloc[-1]
             ema_50 = df['ema_50'].iloc[-1]
             ema_200 = df['ema_200'].iloc[-1]
             
+            # Calculate ADX
             adx = self._calculate_adx(df)
+            
+            # Detect swing points
             swing_highs, swing_lows = self._detect_swings(df)
+            
+            # Determine structure
             structure = self._determine_structure(swing_highs, swing_lows)
+            
+            # Calculate key levels
             support = self._find_support(df)
             resistance = self._find_resistance(df)
+            
+            # Check for breakout
             breakout_detected, breakout_direction = self._detect_breakout(df, resistance, support)
             
+            # Determine market state
             state, direction, strength = self._determine_market_state(
                 df, current_price, ema_20, ema_50, ema_200, adx, structure, 
                 breakout_detected, breakout_direction
             )
             
+            # Recommend strategy
             recommended_strategy = self._recommend_strategy(state, strength, breakout_detected)
             
             return {
@@ -481,11 +507,15 @@ class MarketStateEngine:
             }
     
     def _calculate_indicators(self, df):
+        """Calculate all technical indicators"""
         df = df.copy()
+        
+        # EMAs
         df['ema_20'] = df['close'].ewm(span=20, min_periods=20).mean()
         df['ema_50'] = df['close'].ewm(span=50, min_periods=50).mean()
         df['ema_200'] = df['close'].ewm(span=200, min_periods=200).mean()
         
+        # ATR
         high_low = df['high'] - df['low']
         high_close = np.abs(df['high'] - df['close'].shift())
         low_close = np.abs(df['low'] - df['close'].shift())
@@ -495,6 +525,7 @@ class MarketStateEngine:
         return df
     
     def _calculate_adx(self, df, period=14):
+        """Calculate ADX"""
         try:
             high = df['high'].values
             low = df['low'].values
@@ -532,9 +563,11 @@ class MarketStateEngine:
             return adx[-1] if not np.isnan(adx[-1]) else 0
             
         except Exception as e:
+            logger.error(f"ADX calculation error: {e}")
             return 0
     
     def _detect_swings(self, df, window=5):
+        """Detect swing highs and lows"""
         swing_highs = []
         swing_lows = []
         
@@ -547,6 +580,7 @@ class MarketStateEngine:
         return swing_highs[-10:], swing_lows[-10:]
     
     def _determine_structure(self, swing_highs, swing_lows):
+        """Determine market structure"""
         if len(swing_highs) < 2 or len(swing_lows) < 2:
             return 'NEUTRAL'
         
@@ -572,6 +606,7 @@ class MarketStateEngine:
         return float(df['high'].iloc[-20:].max())
     
     def _detect_breakout(self, df, resistance, support):
+        """Detect breakouts"""
         try:
             current_price = df['close'].iloc[-1]
             prev_close = df['close'].iloc[-2]
@@ -591,6 +626,7 @@ class MarketStateEngine:
     
     def _determine_market_state(self, df, price, ema20, ema50, ema200, adx, structure, 
                                breakout_detected, breakout_direction):
+        """Determine market state"""
         
         if breakout_detected:
             if breakout_direction == 'BULL':
@@ -618,6 +654,7 @@ class MarketStateEngine:
         return MarketState.RANGING, 'NEUTRAL', 25
     
     def _recommend_strategy(self, state, strength, breakout_detected):
+        """Recommend best strategy"""
         if breakout_detected:
             return 'BREAKOUT_CONTINUATION'
         
@@ -657,9 +694,11 @@ class ContinuationEngine:
             is_bullish = market_state.get('direction') in ['BULLISH', 'BULL']
             is_bearish = market_state.get('direction') in ['BEARISH', 'BEAR']
             
+            # Look at last 15 candles
             for i in range(-15, 0):
                 idx = len(df) + i
                 
+                # BULLISH PULLBACK - In uptrends, SELL (your genius logic)
                 if is_bullish:
                     low = float(df['low'].iloc[idx])
                     ema_val = float(ema_20.iloc[idx])
@@ -692,6 +731,7 @@ class ContinuationEngine:
                                     'market_state': market_state.get('state')
                                 })
                 
+                # BEARISH RALLY - In downtrends, BUY (your genius logic)
                 if is_bearish:
                     high = float(df['high'].iloc[idx])
                     ema_val = float(ema_20.iloc[idx])
@@ -724,6 +764,7 @@ class ContinuationEngine:
                                     'market_state': market_state.get('state')
                                 })
             
+            # Filter by age
             current_index = len(df) - 1
             valid_signals = []
             
@@ -751,18 +792,20 @@ class QuasimodoEngine:
         self.VOLATILITY_MULTIPLIER_TP = 2.5
     
     def _get_pip_value(self, symbol):
+        """Get pip value for tolerance"""
         if not symbol:
             return 0.0001
         if 'JPY' in symbol or 'XAG' in symbol or 'BTC' in symbol:
             return 0.01
         elif 'XAU' in symbol or 'US30' in symbol or 'USTEC' in symbol or 'US100' in symbol:
             return 0.1
-        elif 'R_' in symbol:
+        elif 'R_' in symbol:  # Synthetics
             return 0.01
         else:
             return 0.0001
     
     def _check_retest(self, df, pattern_level, direction, tolerance):
+        """Check if price retested within tolerance"""
         try:
             last_12_low = df['low'].iloc[-12:].min()
             last_12_high = df['high'].iloc[-12:].max()
@@ -784,6 +827,8 @@ class QuasimodoEngine:
             return False
     
     def detect_setups(self, df, market_state, symbol):
+        """Detect Quasimodo setups"""
+        
         if not market_state or market_state.get('state') in [MarketState.STRONG_UPTREND.value, MarketState.STRONG_DOWNTREND.value]:
             return []
         
@@ -808,6 +853,7 @@ class QuasimodoEngine:
                 if pattern_age > self.MAX_PATTERN_AGE:
                     continue
                 
+                # SELL QUASIMODO (Bearish pattern) -> BUY signal (your genius logic)
                 if h1 < h2 > h3 and l1 < l2 < l3 and close < h2:
                     near_resistance = abs(close - market_state.get('resistance', close)) < current_atr * 2
                     
@@ -836,6 +882,7 @@ class QuasimodoEngine:
                                 'market_state': market_state.get('state')
                             })
                 
+                # BUY QUASIMODO (Bullish pattern) -> SELL signal (your genius logic)
                 if l1 > l2 < l3 and h1 > h2 > h3 and close > l2:
                     near_support = abs(close - market_state.get('support', close)) < current_atr * 2
                     
@@ -876,6 +923,8 @@ class SmartStrategySelector:
     """Decides which strategy to use - EXACT same as your MT5 bot"""
     
     def select_best_trades(self, continuation_signals, quasimodo_signals, market_state):
+        """Select best trades for current market"""
+        
         if not market_state:
             return []
         
@@ -883,39 +932,49 @@ class SmartStrategySelector:
         selected_trades = []
         
         try:
+            # STRONG UPTREND - ONLY CONTINUATION SELLS
             if state == MarketState.STRONG_UPTREND.value:
                 selected_trades = [t for t in continuation_signals if t.get('type') == 'SELL']
                 logger.info(f"📊 STRONG UPTREND - Using CONTINUATION SELLS only")
             
+            # STRONG DOWNTREND - ONLY CONTINUATION BUYS
             elif state == MarketState.STRONG_DOWNTREND.value:
                 selected_trades = [t for t in continuation_signals if t.get('type') == 'BUY']
                 logger.info(f"📊 STRONG DOWNTREND - Using CONTINUATION BUYS only")
             
+            # UPTREND - PREFER CONTINUATION SELLS, ALLOW STRONG QUASIMODO
             elif state == MarketState.UPTREND.value:
                 selected_trades = [t for t in continuation_signals if t.get('type') == 'SELL']
                 strong_qm = [q for q in quasimodo_signals if q.get('confidence', 0) > 80]
                 selected_trades.extend(strong_qm)
                 logger.info(f"📊 UPTREND - Prefer CONTINUATION SELLS, allow strong QUASIMODO")
             
+            # DOWNTREND - PREFER CONTINUATION BUYS, ALLOW STRONG QUASIMODO
             elif state == MarketState.DOWNTREND.value:
                 selected_trades = [t for t in continuation_signals if t.get('type') == 'BUY']
                 strong_qm = [q for q in quasimodo_signals if q.get('confidence', 0) > 80]
                 selected_trades.extend(strong_qm)
                 logger.info(f"📊 DOWNTREND - Prefer CONTINUATION BUYS, allow strong QUASIMODO")
             
+            # RANGING - ONLY QUASIMODO
             elif state == MarketState.RANGING.value:
                 selected_trades = quasimodo_signals
                 logger.info(f"📊 RANGING - Using QUASIMODO only")
             
+            # BREAKOUT - CONTINUATION
             elif state in [MarketState.BREAKOUT_BULL.value, MarketState.BREAKOUT_BEAR.value]:
                 selected_trades = continuation_signals
                 logger.info(f"📊 BREAKOUT - Using CONTINUATION for momentum")
             
+            # CHOPPY - SKIP ALL
             elif state == MarketState.CHOPPY.value:
                 selected_trades = []
                 logger.info(f"📊 CHOPPY - SKIPPING ALL TRADES")
             
+            # Filter by confidence (minimum 65%)
             selected_trades = [t for t in selected_trades if t.get('confidence', 0) >= 65]
+            
+            # Sort by confidence
             selected_trades.sort(key=lambda x: x.get('confidence', 0), reverse=True)
             
         except Exception as e:
@@ -951,6 +1010,7 @@ class KarankaTradingEngine:
         self.total_wins = 0
         self.total_losses = 0
         
+        # Settings
         self.dry_run = True
         self.max_daily_trades = MAX_DAILY_TRADES
         self.max_concurrent_trades = MAX_CONCURRENT_TRADES
@@ -963,10 +1023,13 @@ class KarankaTradingEngine:
             "US30", "US100", "BTCUSD"
         ]
         
+        # Start daily reset thread
         self._start_daily_reset()
+        
         logger.info("✅ Karanka Trading Engine initialized")
     
     def _start_daily_reset(self):
+        """Reset daily counters at midnight"""
         def reset_daily():
             while True:
                 now = datetime.now()
@@ -988,19 +1051,23 @@ class KarankaTradingEngine:
         thread.start()
     
     def connect(self, token):
-        self.token = token.strip()
+        """Connect to Deriv - passes token EXACTLY as received"""
+        self.token = token  # Store EXACTLY what user entered - NO CHANGES!
+        logger.info(f"Connecting with token: {self.token[:4]}...{self.token[-4:]} (length: {len(self.token)})")
         success, message = self.api.connect(token)
         if success:
             self.connected = True
         return success, message
     
     def disconnect(self):
+        """Disconnect from Deriv"""
         self.api.disconnect()
         self.connected = False
         self.running = False
         logger.info("Disconnected from Deriv")
     
     def start_trading(self, settings=None):
+        """Start trading loop"""
         if not self.connected:
             return False, "Not connected to Deriv"
         
@@ -1020,52 +1087,63 @@ class KarankaTradingEngine:
         return True, "Trading started"
     
     def stop_trading(self):
+        """Stop trading loop"""
         self.running = False
         logger.info("🛑 Trading stopped")
     
     def _trading_loop(self):
+        """Main trading loop"""
         cycle = 0
         error_count = 0
         
         while self.running and self.connected:
             try:
                 cycle += 1
-                error_count = 0
+                error_count = 0  # Reset error count on successful cycle
                 
                 logger.debug(f"🔄 Analysis Cycle {cycle}")
                 
+                # Check if we can trade
                 if not self._can_trade():
                     time.sleep(5)
                     continue
                 
+                # Analyze each enabled symbol
                 signals_found = 0
                 
                 for symbol in self.enabled_symbols:
                     try:
-                        df_15m = self.api.get_candles(symbol, 300, 60)
-                        df_h1 = self.api.get_candles(symbol, 200, 3600)
+                        # Get data (15m for entries, 1h for HTF)
+                        df_15m = self.api.get_candles(symbol, 300, 60)  # 1-minute candles
+                        df_h1 = self.api.get_candles(symbol, 200, 3600)  # 1-hour candles
                         
                         if df_15m is None or len(df_15m) < 100:
+                            logger.debug(f"Insufficient data for {symbol}")
                             continue
                         
                         if df_h1 is None or len(df_h1) < 50:
                             df_h1 = df_15m.copy()
                         
+                        # Prepare dataframes
                         df_15m = self._prepare_dataframe(df_15m)
                         df_h1 = self._prepare_dataframe(df_h1)
                         
                         if df_15m is None or df_h1 is None:
                             continue
                         
+                        # Analyze market state on HTF
                         market_state = self.market_engine.analyze(df_h1)
                         
+                        # Detect setups
                         continuation_signals = self.continuation.detect_setups(df_15m, market_state)
                         quasimodo_signals = self.quasimodo.detect_setups(df_15m, market_state, symbol)
                         
+                        # Select best trades
                         best_trades = self.selector.select_best_trades(
                             continuation_signals, quasimodo_signals, market_state
                         )
                         
+                        # Store analysis
                         self.market_analysis[symbol] = {
                             'symbol': symbol,
                             'price': float(df_15m['close'].iloc[-1]),
@@ -1085,6 +1163,7 @@ class KarankaTradingEngine:
                             'timestamp': datetime.now().isoformat()
                         }
                         
+                        # Execute trades if signals exist and we can trade
                         if best_trades and self._can_trade():
                             trade = best_trades[0]
                             if trade['confidence'] >= self.min_confidence:
@@ -1098,9 +1177,11 @@ class KarankaTradingEngine:
                         logger.error(f"Error analyzing {symbol}: {e}")
                         continue
                 
+                # Emit update to web clients
                 socketio.emit('market_update', self.get_market_data())
                 socketio.emit('trade_update', self.get_trade_data())
                 
+                # Sleep between cycles
                 time.sleep(8)
                 
             except Exception as e:
@@ -1116,15 +1197,19 @@ class KarankaTradingEngine:
                 time.sleep(10)
     
     def _prepare_dataframe(self, df):
+        """Prepare dataframe with indicators"""
         if df is None or len(df) < 50:
             return None
         
         try:
             df = df.copy()
+            
+            # EMAs
             df['ema_20'] = df['close'].ewm(span=20, min_periods=20).mean()
             df['ema_50'] = df['close'].ewm(span=50, min_periods=50).mean()
             df['ema_200'] = df['close'].ewm(span=200, min_periods=200).mean()
             
+            # ATR
             high_low = df['high'] - df['low']
             high_close = np.abs(df['high'] - df['close'].shift())
             low_close = np.abs(df['low'] - df['close'].shift())
@@ -1138,6 +1223,7 @@ class KarankaTradingEngine:
             return None
     
     def _can_trade(self):
+        """Check if we can trade"""
         if len(self.active_trades) >= self.max_concurrent_trades:
             return False
         
@@ -1156,8 +1242,10 @@ class KarankaTradingEngine:
         return True
     
     def _execute_trade(self, symbol, trade):
+        """Execute a trade"""
         try:
             if self.dry_run:
+                # Simulate trade
                 trade_record = {
                     'symbol': symbol,
                     'direction': trade['type'],
@@ -1176,13 +1264,16 @@ class KarankaTradingEngine:
                 
                 logger.info(f"✅ [DRY RUN] {symbol} {trade['type']} | Conf: {trade['confidence']:.0f}%")
                 
+                # Simulate trade result after 5 minutes
                 def simulate_result():
-                    time.sleep(300)
+                    time.sleep(300)  # 5 minutes
+                    
+                    # Simulate based on confidence (higher confidence = higher win chance)
                     import random
                     win_chance = trade['confidence'] / 100
                     
                     if random.random() < win_chance:
-                        profit = self.fixed_amount * 2.5
+                        profit = self.fixed_amount * 2.5  # 1:2.5 RR
                         self.daily_pnl += profit
                         self.consecutive_losses = 0
                         self.total_wins += 1
@@ -1211,6 +1302,7 @@ class KarankaTradingEngine:
                 return True, "Dry run trade placed"
             
             else:
+                # Real trade
                 result, message = self.api.place_trade(
                     symbol=symbol,
                     direction=trade['type'],
@@ -1236,8 +1328,9 @@ class KarankaTradingEngine:
                     }
                     self.active_trades.append(trade_record)
                     
+                    # Monitor trade
                     def monitor_trade():
-                        time.sleep(300)
+                        time.sleep(300)  # 5 minutes
                         status = self.api.get_trade_status(result['contract_id'])
                         if status:
                             profit = float(status.get('profit', 0))
@@ -1274,12 +1367,14 @@ class KarankaTradingEngine:
             return False, str(e)
     
     def get_market_data(self):
+        """Get market analysis data for UI"""
         return {
             'market_analysis': self.market_analysis,
             'timestamp': datetime.now().isoformat()
         }
     
     def get_trade_data(self):
+        """Get trade data for UI"""
         return {
             'active_trades': self.active_trades[-10:],
             'trade_history': self.trade_history[-50:],
@@ -1292,6 +1387,7 @@ class KarankaTradingEngine:
         }
     
     def get_status(self):
+        """Get system status"""
         return {
             'connected': self.connected,
             'running': self.running,
@@ -1304,7 +1400,7 @@ class KarankaTradingEngine:
             'total_wins': self.total_wins,
             'total_losses': self.total_losses,
             'win_rate': round((self.total_wins / (self.total_wins + self.total_losses + 1)) * 100, 1)
-    }
+        }
 
 
 # ============ INITIALIZE TRADING ENGINE ============
@@ -1314,10 +1410,12 @@ trading_engine = KarankaTradingEngine()
 
 @app.route('/')
 def index():
+    """Main page - serves the UI"""
     return render_template('index.html')
 
 @app.route('/health')
 def health():
+    """Health check endpoint for Render"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
@@ -1327,6 +1425,7 @@ def health():
 
 @app.route('/api/connect', methods=['POST'])
 def api_connect():
+    """Connect to Deriv"""
     try:
         data = request.json
         token = data.get('token')
@@ -1334,6 +1433,8 @@ def api_connect():
         if not token:
             return jsonify({'success': False, 'message': 'Token required'})
         
+        # Pass token EXACTLY as received - NO modifications!
+        logger.info(f"Received token: {token[:4]}...{token[-4:]} (length: {len(token)})")
         success, message = trading_engine.connect(token)
         return jsonify({'success': success, 'message': message})
         
@@ -1343,6 +1444,7 @@ def api_connect():
 
 @app.route('/api/disconnect', methods=['POST'])
 def api_disconnect():
+    """Disconnect from Deriv"""
     try:
         trading_engine.disconnect()
         return jsonify({'success': True, 'message': 'Disconnected'})
@@ -1351,6 +1453,7 @@ def api_disconnect():
 
 @app.route('/api/start', methods=['POST'])
 def api_start():
+    """Start trading"""
     try:
         settings = request.json or {}
         success, message = trading_engine.start_trading(settings)
@@ -1360,6 +1463,7 @@ def api_start():
 
 @app.route('/api/stop', methods=['POST'])
 def api_stop():
+    """Stop trading"""
     try:
         trading_engine.stop_trading()
         return jsonify({'success': True, 'message': 'Trading stopped'})
@@ -1368,6 +1472,7 @@ def api_stop():
 
 @app.route('/api/status')
 def api_status():
+    """Get system status"""
     try:
         return jsonify(trading_engine.get_status())
     except Exception as e:
@@ -1375,6 +1480,7 @@ def api_status():
 
 @app.route('/api/market_data')
 def api_market_data():
+    """Get market data"""
     try:
         return jsonify(trading_engine.get_market_data())
     except Exception as e:
@@ -1382,6 +1488,7 @@ def api_market_data():
 
 @app.route('/api/trade_data')
 def api_trade_data():
+    """Get trade data"""
     try:
         return jsonify(trading_engine.get_trade_data())
     except Exception as e:
@@ -1389,6 +1496,7 @@ def api_trade_data():
 
 @app.route('/api/symbols')
 def api_symbols():
+    """Get available symbols"""
     try:
         if trading_engine.connected:
             symbols = trading_engine.api.get_active_symbols()
@@ -1399,6 +1507,7 @@ def api_symbols():
 
 @app.route('/api/settings', methods=['POST'])
 def api_settings():
+    """Update settings"""
     try:
         data = request.json
         if data:
@@ -1416,15 +1525,18 @@ def api_settings():
 # ============ SOCKETIO EVENTS ============
 @socketio.on('connect')
 def handle_connect():
+    """Client connected"""
     logger.info(f"Client connected: {request.sid}")
     emit('connected', {'data': 'Connected to Karanka Server'})
 
 @socketio.on('disconnect')
 def handle_disconnect():
+    """Client disconnected"""
     logger.info(f"Client disconnected: {request.sid}")
 
 @socketio.on('request_update')
 def handle_update_request():
+    """Client requested update"""
     emit('market_update', trading_engine.get_market_data())
     emit('trade_update', trading_engine.get_trade_data())
 
@@ -1440,6 +1552,7 @@ def internal_error(error):
 
 # ============ STARTUP ============
 if __name__ == '__main__':
+    # Get port from environment
     port = int(os.environ.get('PORT', 5000))
     
     logger.info("=" * 60)
@@ -1451,10 +1564,12 @@ if __name__ == '__main__':
     logger.info(f"✅ Smart Selector: ACTIVE")
     logger.info(f"✅ 2 Pip Retest: ACTIVE")
     logger.info(f"✅ HTF Structure: MANDATORY")
-    logger.info(f"✅ FIXED DERIV AUTH: RAW TOKEN SENDING")
+    logger.info(f"✅ FIXED DERIV AUTH: RAW TOKEN SENDING (NO MODIFICATIONS)")
+    logger.info(f"✅ Token format: Accepts ANY token EXACTLY as provided")
     logger.info(f"✅ Port: {port}")
     logger.info("=" * 60)
     
+    # Run the app
     socketio.run(
         app,
         host='0.0.0.0',
