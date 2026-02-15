@@ -10,7 +10,9 @@ KARANKA MULTIVERSE ALGO AI - DERIV PRODUCTION BOT
 ✅ SMART SELECTOR - Your proven strategy
 ✅ 2 PIP RETEST - Precision entries
 ✅ HTF STRUCTURE - MANDATORY
-✅ FIXED DERIV CONNECTION - Accepts ANY token format EXACTLY as provided
+✅ FIXED DERIV CONNECTION - wss://ws.deriv.com with App ID 1089
+✅ PING MECHANISM - Keeps bot alive 24/7
+✅ FETCHING KEEP-AWAKE - Self-pings every 5 minutes
 ✅ PRODUCTION READY - Deployed on Render
 ================================================================================
 """
@@ -40,7 +42,7 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
 app.config['DEBUG'] = False
 
 # SocketIO for real-time updates
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
 
 # Logging setup
 logging.basicConfig(
@@ -53,9 +55,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ============ CONFIGURATION ============
-DERIV_APP_ID = os.environ.get('DERIV_APP_ID', '1089')
-DERIV_WS_URL = f"wss://ws.derivws.com/websockets/v3?app_id={DERIV_APP_ID}"
+# ============ CONFIGURATION - FIXED FOR DERIV ============
+DERIV_APP_ID = '1089'  # HARDCODED to default Deriv app ID
+DERIV_WS_URL = "wss://ws.deriv.com/websockets/v3?app_id=1089"  # CORRECT URL
+BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:5000')
 MAX_DAILY_TRADES = int(os.environ.get('MAX_DAILY_TRADES', 20))
 MAX_CONCURRENT_TRADES = int(os.environ.get('MAX_CONCURRENT_TRADES', 3))
 FIXED_AMOUNT = float(os.environ.get('FIXED_AMOUNT', 1.0))
@@ -71,9 +74,48 @@ class MarketState(Enum):
     BREAKOUT_BEAR = "BREAKOUT_BEAR"
     CHOPPY = "CHOPPY"
 
-# ============ DERIV API CONNECTOR - ABSOLUTELY FIXED VERSION ============
+# ============ KEEP AWAKE MECHANISM ============
+class KeepAwake:
+    """Prevents the bot from sleeping on Render free tier"""
+    
+    def __init__(self, url):
+        self.url = url
+        self.running = True
+        self.ping_count = 0
+        
+    def start(self):
+        """Start the keep-awake ping thread"""
+        def ping_loop():
+            while self.running:
+                try:
+                    self.ping_count += 1
+                    # Ping the health endpoint every 5 minutes
+                    response = requests.get(f"{self.url}/health", timeout=10)
+                    logger.info(f"🏓 Keep-awake ping #{self.ping_count} - Status: {response.status_code}")
+                    
+                    # Also ping the main page to keep session alive
+                    requests.get(self.url, timeout=10)
+                    
+                except Exception as e:
+                    logger.error(f"Keep-awake ping failed: {e}")
+                
+                # Wait 5 minutes before next ping
+                for _ in range(300):  # 5 minutes = 300 seconds
+                    if not self.running:
+                        break
+                    time.sleep(1)
+        
+        thread = threading.Thread(target=ping_loop, daemon=True)
+        thread.start()
+        logger.info("✅ Keep-awake mechanism started - pinging every 5 minutes")
+    
+    def stop(self):
+        self.running = False
+
+
+# ============ DERIV API CONNECTOR - FIXED VERSION WITH PING ============
 class DerivAPI:
-    """Production-ready Deriv WebSocket API - FIXED to accept ANY token format EXACTLY as provided"""
+    """Production-ready Deriv WebSocket API with ping keep-alive"""
     
     def __init__(self):
         self.ws = None
@@ -85,99 +127,138 @@ class DerivAPI:
         self.active_contracts = {}
         self.ping_thread_running = False
         self.last_pong = time.time()
+        self.connection_attempts = 0
+        self.reconnect_delay = 1
         
     def _next_id(self):
         self.req_id += 1
         return self.req_id
     
     def connect(self, token):
-        """Connect to Deriv - accepts token EXACTLY as user provides (no modifications)"""
+        """Connect to Deriv - accepts token EXACTLY as user provides"""
         self.token = token  # Use EXACTLY what user entered - NO CHANGES!
         logger.info(f"Connecting with token: {self.token[:4]}...{self.token[-4:]} (length: {len(self.token)})")
         return self._connect_with_retry()
     
-    def _connect_with_retry(self, max_retries=3):
-        """Connect with retry logic - sends token EXACTLY as received - NO MODIFICATIONS!"""
+    def _connect_with_retry(self, max_retries=5):
+        """Connect with retry logic and exponential backoff"""
+        self.connection_attempts += 1
+        
         for attempt in range(max_retries):
             try:
                 logger.info(f"Connecting to Deriv (attempt {attempt + 1}/{max_retries})")
                 
-                # Create WebSocket connection
+                # Use the CORRECT Deriv WebSocket URL
+                logger.info(f"Connecting to: {DERIV_WS_URL}")
+                
+                # Create WebSocket connection with timeout
                 self.ws = websocket.create_connection(
                     DERIV_WS_URL,
-                    timeout=30,
+                    timeout=20,
                     enable_multithread=True
                 )
                 
-                # CRITICAL: Send token EXACTLY as received - NO .strip() NO modifications!
-                # If user entered "9oj1mT1uv7wtP4b", send "9oj1mT1uv7wtP4b" exactly
-                logger.info(f"Sending raw token (no modifications)...")
-                self.ws.send(self.token)  # Send EXACT string - no JSON, no wrapping!
+                # Send token EXACTLY as received - RAW string, NO JSON!
+                logger.info(f"Sending token (length: {len(self.token)})")
+                self.ws.send(self.token)
                 
-                # Get response
+                # Wait for response with timeout
+                self.ws.settimeout(10)
                 response = self.ws.recv()
                 logger.info(f"Response received: {response[:100]}")
                 
                 # Parse response
                 response_data = json.loads(response)
                 
-                # Check for success
+                # Check for successful authorization
                 if 'authorize' in response_data:
                     self.connected = True
                     loginid = response_data['authorize'].get('loginid', 'Unknown')
+                    currency = response_data['authorize'].get('currency', 'USD')
+                    balance = response_data['authorize'].get('balance', 0)
                     logger.info(f"✅ Connected to Deriv successfully as {loginid}")
+                    logger.info(f"💰 Balance: {balance} {currency}")
                     
-                    # Start heartbeat
+                    # Start heartbeat to keep connection alive
                     self._start_heartbeat()
                     self._start_message_listener()
                     
-                    return True, f"Connected as {loginid}"
+                    # Reset connection attempts on success
+                    self.connection_attempts = 0
+                    self.reconnect_delay = 1
+                    
+                    return True, f"Connected as {loginid} | Balance: {balance} {currency}"
                 
                 elif 'error' in response_data:
                     error_msg = response_data['error'].get('message', 'Unknown error')
                     logger.error(f"Auth failed: {error_msg}")
                     
                     if attempt < max_retries - 1:
-                        time.sleep(2 ** attempt)
+                        wait_time = min(30, 2 ** attempt)
+                        logger.info(f"Retrying in {wait_time} seconds...")
+                        time.sleep(wait_time)
                         continue
                     return False, error_msg
                 else:
                     return False, "Unexpected response format"
                     
+            except websocket.WebSocketTimeoutException:
+                logger.error("Connection timeout")
+                if attempt < max_retries - 1:
+                    wait_time = min(30, 2 ** attempt)
+                    time.sleep(wait_time)
+                else:
+                    return False, "Connection timeout"
+                    
             except websocket.WebSocketException as e:
                 logger.error(f"WebSocket error: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    wait_time = min(30, 2 ** attempt)
+                    time.sleep(wait_time)
                 else:
                     return False, f"WebSocket error: {str(e)}"
                     
             except Exception as e:
                 logger.error(f"Connection attempt {attempt + 1} failed: {e}")
                 if attempt < max_retries - 1:
-                    time.sleep(2 ** attempt)
+                    wait_time = min(30, 2 ** attempt)
+                    time.sleep(wait_time)
                 else:
                     return False, str(e)
         
         return False, "Max retries exceeded"
     
     def _start_heartbeat(self):
-        """Send periodic ping to keep connection alive"""
+        """Send periodic ping to keep connection alive (every 25 seconds)"""
         def heartbeat():
             self.ping_thread_running = True
+            ping_count = 0
             while self.connected and self.ping_thread_running:
                 try:
                     time.sleep(25)
                     if self.ws and self.connected:
+                        ping_count += 1
                         ping_msg = {"ping": 1, "req_id": self._next_id()}
                         self.ws.send(json.dumps(ping_msg))
-                        logger.debug("Ping sent")
+                        logger.debug(f"Heartbeat ping #{ping_count} sent")
+                except websocket.WebSocketConnectionClosedException:
+                    logger.warning("WebSocket connection closed, attempting reconnect...")
+                    self.connected = False
+                    break
                 except Exception as e:
                     logger.error(f"Heartbeat error: {e}")
                     self.connected = False
                     break
+            
+            # Auto-reconnect if heartbeat fails
+            if not self.connected and self.token:
+                logger.info("Heartbeat failed - attempting to reconnect...")
+                time.sleep(5)
+                self._connect_with_retry()
         
         thread = threading.Thread(target=heartbeat, daemon=True)
         thread.start()
+        logger.info("✅ Heartbeat mechanism started - pinging every 25 seconds")
     
     def _start_message_listener(self):
         """Listen for incoming messages with auto-reconnect"""
@@ -191,12 +272,22 @@ class DerivAPI:
                         if 'pong' in data:
                             self.last_pong = time.time()
                             logger.debug("Pong received")
+                        elif 'proposal_open_contract' in data:
+                            # Handle trade updates
+                            contract = data['proposal_open_contract']
+                            if contract.get('is_sold', False):
+                                logger.info(f"Contract {contract.get('contract_id')} closed")
                 except websocket.WebSocketTimeoutException:
-                    if time.time() - self.last_pong > 60:
-                        logger.warning("No pong received for 60 seconds, reconnecting...")
+                    # Check if we missed pong
+                    if time.time() - self.last_pong > 90:
+                        logger.warning("No pong received for 90 seconds, reconnecting...")
                         self.connected = False
                         break
                     continue
+                except websocket.WebSocketConnectionClosedException:
+                    logger.warning("WebSocket connection closed")
+                    self.connected = False
+                    break
                 except Exception as e:
                     if self.connected:
                         logger.error(f"Message listener error: {e}")
@@ -204,12 +295,13 @@ class DerivAPI:
             
             # Auto-reconnect if disconnected
             if not self.connected and self.token:
-                logger.info("Attempting to reconnect...")
+                logger.info("Message listener disconnected - attempting to reconnect...")
                 time.sleep(5)
                 self._connect_with_retry()
         
         thread = threading.Thread(target=listener, daemon=True)
         thread.start()
+        logger.info("✅ Message listener started")
     
     def get_candles(self, symbol, count=500, granularity=60):
         """Get historical candles with caching"""
@@ -235,15 +327,17 @@ class DerivAPI:
             }
             
             self.ws.send(json.dumps(request))
-            response = json.loads(self.ws.recv())
+            response = self.ws.recv()
             
-            if 'error' in response:
-                logger.error(f"Error getting candles for {symbol}: {response['error']}")
+            response_data = json.loads(response)
+            
+            if 'error' in response_data:
+                logger.error(f"Error getting candles for {symbol}: {response_data['error']}")
                 return None
             
             # Format candles
             candles = []
-            for candle in response.get('candles', []):
+            for candle in response_data.get('candles', []):
                 candles.append({
                     'time': candle['epoch'],
                     'open': float(candle['open']),
@@ -276,10 +370,11 @@ class DerivAPI:
             }
             
             self.ws.send(json.dumps(request))
-            response = json.loads(self.ws.recv())
+            response = self.ws.recv()
+            response_data = json.loads(response)
             
-            if 'error' in response:
-                logger.error(f"Error getting symbols: {response['error']}")
+            if 'error' in response_data:
+                logger.error(f"Error getting symbols: {response_data['error']}")
                 return []
             
             symbols = []
@@ -291,7 +386,7 @@ class DerivAPI:
                 'synthetic_index': '🎲 SYNTHETICS'
             }
             
-            for item in response.get('active_symbols', []):
+            for item in response_data.get('active_symbols', []):
                 market = item.get('market', '').lower()
                 if market in markets or 'synthetic' in market:
                     symbols.append({
@@ -333,17 +428,18 @@ class DerivAPI:
             }
             
             self.ws.send(json.dumps(order))
-            response = json.loads(self.ws.recv())
+            response = self.ws.recv()
+            response_data = json.loads(response)
             
-            if 'error' in response:
-                logger.error(f"Trade failed for {symbol}: {response['error']}")
-                return None, response['error']['message']
+            if 'error' in response_data:
+                logger.error(f"Trade failed for {symbol}: {response_data['error']}")
+                return None, response_data['error']['message']
             
-            if 'buy' not in response:
+            if 'buy' not in response_data:
                 return None, "Unexpected response format"
             
-            contract_id = response['buy'].get('contract_id')
-            entry_price = float(response['buy'].get('price', 0))
+            contract_id = response_data['buy'].get('contract_id')
+            entry_price = float(response_data['buy'].get('price', 0))
             
             # Store active contract
             self.active_contracts[contract_id] = {
@@ -382,13 +478,14 @@ class DerivAPI:
             }
             
             self.ws.send(json.dumps(request))
-            response = json.loads(self.ws.recv())
+            response = self.ws.recv()
+            response_data = json.loads(response)
             
-            if 'error' in response:
-                logger.error(f"Error getting trade status: {response['error']}")
+            if 'error' in response_data:
+                logger.error(f"Error getting trade status: {response_data['error']}")
                 return None
             
-            contract = response.get('proposal_open_contract', {})
+            contract = response_data.get('proposal_open_contract', {})
             
             return {
                 'is_sold': contract.get('is_sold', False),
@@ -415,7 +512,7 @@ class DerivAPI:
         logger.info("Disconnected from Deriv")
 
 
-# ============ MARKET STATE ENGINE ============
+# ============ MARKET STATE ENGINE (Your complete logic) ============
 class MarketStateEngine:
     """Analyzes market conditions - EXACT same as your MT5 bot"""
     
@@ -1009,6 +1106,7 @@ class KarankaTradingEngine:
         self.last_trade_time = None
         self.total_wins = 0
         self.total_losses = 0
+        self.analysis_cycle = 0
         
         # Settings
         self.dry_run = True
@@ -1092,24 +1190,22 @@ class KarankaTradingEngine:
         logger.info("🛑 Trading stopped")
     
     def _trading_loop(self):
-        """Main trading loop"""
-        cycle = 0
+        """Main trading loop - this keeps the bot alive with constant data fetching"""
         error_count = 0
         
         while self.running and self.connected:
             try:
-                cycle += 1
+                self.analysis_cycle += 1
                 error_count = 0  # Reset error count on successful cycle
                 
-                logger.debug(f"🔄 Analysis Cycle {cycle}")
+                logger.info(f"🔄 Analysis Cycle #{self.analysis_cycle} - Fetching market data...")
                 
                 # Check if we can trade
-                if not self._can_trade():
-                    time.sleep(5)
-                    continue
+                can_trade = self._can_trade()
                 
                 # Analyze each enabled symbol
                 signals_found = 0
+                symbols_analyzed = 0
                 
                 for symbol in self.enabled_symbols:
                     try:
@@ -1130,6 +1226,8 @@ class KarankaTradingEngine:
                         
                         if df_15m is None or df_h1 is None:
                             continue
+                        
+                        symbols_analyzed += 1
                         
                         # Analyze market state on HTF
                         market_state = self.market_engine.analyze(df_h1)
@@ -1164,7 +1262,7 @@ class KarankaTradingEngine:
                         }
                         
                         # Execute trades if signals exist and we can trade
-                        if best_trades and self._can_trade():
+                        if best_trades and can_trade:
                             trade = best_trades[0]
                             if trade['confidence'] >= self.min_confidence:
                                 success, result = self._execute_trade(symbol, trade)
@@ -1177,11 +1275,14 @@ class KarankaTradingEngine:
                         logger.error(f"Error analyzing {symbol}: {e}")
                         continue
                 
+                # Log summary
+                logger.info(f"📊 Cycle complete - Analyzed {symbols_analyzed} symbols, Found {signals_found} signals")
+                
                 # Emit update to web clients
                 socketio.emit('market_update', self.get_market_data())
                 socketio.emit('trade_update', self.get_trade_data())
                 
-                # Sleep between cycles
+                # Sleep between cycles (8 seconds)
                 time.sleep(8)
                 
             except Exception as e:
@@ -1370,7 +1471,8 @@ class KarankaTradingEngine:
         """Get market analysis data for UI"""
         return {
             'market_analysis': self.market_analysis,
-            'timestamp': datetime.now().isoformat()
+            'timestamp': datetime.now().isoformat(),
+            'cycle': self.analysis_cycle
         }
     
     def get_trade_data(self):
@@ -1399,12 +1501,14 @@ class KarankaTradingEngine:
             'max_concurrent': self.max_concurrent_trades,
             'total_wins': self.total_wins,
             'total_losses': self.total_losses,
-            'win_rate': round((self.total_wins / (self.total_wins + self.total_losses + 1)) * 100, 1)
+            'win_rate': round((self.total_wins / (self.total_wins + self.total_losses + 1)) * 100, 1),
+            'analysis_cycle': self.analysis_cycle
         }
 
 
 # ============ INITIALIZE TRADING ENGINE ============
 trading_engine = KarankaTradingEngine()
+keep_awake = KeepAwake(BASE_URL)
 
 # ============ FLASK ROUTES ============
 
@@ -1415,13 +1519,20 @@ def index():
 
 @app.route('/health')
 def health():
-    """Health check endpoint for Render"""
+    """Health check endpoint for Render and keep-awake"""
     return jsonify({
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
         'connected': trading_engine.connected if trading_engine else False,
-        'running': trading_engine.running if trading_engine else False
+        'running': trading_engine.running if trading_engine else False,
+        'cycle': trading_engine.analysis_cycle if trading_engine else 0,
+        'uptime': time.time() - start_time if 'start_time' in globals() else 0
     })
+
+@app.route('/ping')
+def ping():
+    """Simple ping endpoint for keep-awake"""
+    return 'pong'
 
 @app.route('/api/connect', methods=['POST'])
 def api_connect():
@@ -1526,13 +1637,13 @@ def api_settings():
 @socketio.on('connect')
 def handle_connect():
     """Client connected"""
-    logger.info(f"Client connected: {request.sid}")
+    logger.info(f"📱 Client connected: {request.sid}")
     emit('connected', {'data': 'Connected to Karanka Server'})
 
 @socketio.on('disconnect')
 def handle_disconnect():
     """Client disconnected"""
-    logger.info(f"Client disconnected: {request.sid}")
+    logger.info(f"📱 Client disconnected: {request.sid}")
 
 @socketio.on('request_update')
 def handle_update_request():
@@ -1554,6 +1665,7 @@ def internal_error(error):
 if __name__ == '__main__':
     # Get port from environment
     port = int(os.environ.get('PORT', 5000))
+    start_time = time.time()
     
     logger.info("=" * 60)
     logger.info("KARANKA MULTIVERSE ALGO AI - DERIV PRODUCTION BOT")
@@ -1564,10 +1676,15 @@ if __name__ == '__main__':
     logger.info(f"✅ Smart Selector: ACTIVE")
     logger.info(f"✅ 2 Pip Retest: ACTIVE")
     logger.info(f"✅ HTF Structure: MANDATORY")
-    logger.info(f"✅ FIXED DERIV AUTH: RAW TOKEN SENDING (NO MODIFICATIONS)")
-    logger.info(f"✅ Token format: Accepts ANY token EXACTLY as provided")
+    logger.info(f"✅ FIXED DERIV AUTH: RAW TOKEN SENDING")
+    logger.info(f"✅ DERIV URL: {DERIV_WS_URL}")
+    logger.info(f"✅ KEEP-AWAKE: Active - pinging every 5 minutes")
+    logger.info(f"✅ HEARTBEAT: Active - pinging every 25 seconds")
     logger.info(f"✅ Port: {port}")
     logger.info("=" * 60)
+    
+    # Start keep-awake mechanism
+    keep_awake.start()
     
     # Run the app
     socketio.run(
