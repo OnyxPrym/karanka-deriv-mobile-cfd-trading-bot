@@ -2,8 +2,12 @@ services:
   - type: web
     name: karanka-deriv-bot
     runtime: python
+    region: oregon
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn karanka-mobile-app.app:app --host 0.0.0.0 --port 10000
+    startCommand: uvicorn app:app --host 0.0.0.0 --port 10000
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.11
+    autoDeploy: true
+    healthCheckPath: /health
+    plan: free
