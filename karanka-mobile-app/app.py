@@ -13,9 +13,7 @@ KARANKA MULTIVERSE ALGO AI - DERIV PRODUCTION BOT
 ✅ 49 MARKETS - All synthetics, forex, indices, commodities, crypto
 ✅ TRADE STATUS TRACKING - Knows when trades are closed
 ✅ TRAILING STOP LOSS - 30% to TP locks 85% profits
-✅ DAILY P&L - Tracks profit/loss
-✅ WIN RATE - Calculates automatically
-✅ FIXED DERIV CONNECTION - NOW CONNECTS TO DERIV!
+✅ CORRECT DERIV CONNECTION - Using wss://ws.derivws.com with async websockets
 ✅ PRODUCTION READY - Deployed on Render
 ================================================================================
 """
@@ -23,14 +21,18 @@ KARANKA MULTIVERSE ALGO AI - DERIV PRODUCTION BOT
 import os
 import json
 import time
+import asyncio
 import threading
 import logging
-import websocket
+import websockets
 import requests
 from datetime import datetime, timedelta
 from collections import defaultdict
-from flask import Flask, render_template, jsonify, request
-from flask_socketio import SocketIO, emit
+from fastapi import FastAPI, Request, HTTPException
+from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+import uvicorn
 import pandas as pd
 import numpy as np
 from enum import Enum
@@ -38,11 +40,16 @@ import traceback
 import random
 
 # ============ INITIALIZATION ============
-app = Flask(__name__)
-app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', os.urandom(24).hex())
+app = FastAPI(title="Karanka Multiverse Algo AI - Deriv Bot")
 
-# SocketIO for real-time updates
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading', ping_timeout=60, ping_interval=25)
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # Logging setup
 logging.basicConfig(
@@ -56,9 +63,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ============ CONFIGURATION - CORRECT FOR DERIV ============
-DERIV_APP_ID = '1089'  # NUMERIC app_id
-DERIV_WS_URL = f"wss://ws.derivws.com/websockets/v3?app_id={DERIV_APP_ID}"  # CORRECT URL
-BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:5000')
+DERIV_APP_ID = '1089'  # NUMERIC app_id - THIS IS FIXED!
+DERIV_WS_URL = f"wss://ws.derivws.com/websockets/v3?app_id={DERIV_APP_ID}"  # CORRECT URL with derivws.com
+BASE_URL = os.environ.get('RENDER_EXTERNAL_URL', 'http://localhost:8000')
 MAX_DAILY_TRADES = int(os.environ.get('MAX_DAILY_TRADES', 20))
 MAX_CONCURRENT_TRADES = int(os.environ.get('MAX_CONCURRENT_TRADES', 3))
 FIXED_AMOUNT = float(os.environ.get('FIXED_AMOUNT', 1.0))
@@ -76,12 +83,15 @@ class MarketState(Enum):
 
 # ============ KEEP AWAKE MECHANISM ============
 class KeepAwake:
+    """Prevents the bot from sleeping on Render free tier"""
+    
     def __init__(self, url):
         self.url = url
         self.running = True
         self.ping_count = 0
         
     def start(self):
+        """Start the keep-awake ping thread"""
         def ping_loop():
             while self.running:
                 try:
@@ -91,156 +101,238 @@ class KeepAwake:
                 except Exception as e:
                     logger.error(f"Keep-awake ping failed: {e}")
                 
-                for _ in range(300):
+                for _ in range(300):  # 5 minutes
                     if not self.running:
                         break
                     time.sleep(1)
         
         thread = threading.Thread(target=ping_loop, daemon=True)
         thread.start()
-        logger.info("✅ Keep-awake mechanism started")
+        logger.info("✅ Keep-awake mechanism started - pinging every 5 minutes")
+    
+    def stop(self):
+        self.running = False
 
-# ============ FIXED DERIV API CONNECTOR ============
+
+# ============ CORRECT DERIV ASYNC API CONNECTOR ============
 class DerivAPI:
+    """Production-ready Deriv WebSocket API - CORRECT async implementation"""
+    
     def __init__(self):
-        self.ws = None
+        self.websocket = None
         self.connected = False
         self.token = None
         self.req_id = 0
         self.candles_cache = {}
         self.active_contracts = {}
-        self.ping_thread_running = False
-        self.listen_thread_running = False
-        self.last_pong = time.time()
+        self.listen_task = None
         self.trade_callbacks = []
+        self.message_queue = asyncio.Queue()
+        self.pending_requests = {}
         
     def _next_id(self):
         self.req_id += 1
         return self.req_id
     
     def register_trade_callback(self, callback):
+        """Register a callback function to be called when trades close"""
         self.trade_callbacks.append(callback)
     
-    def connect(self, token):
+    async def connect(self, token):
+        """Connect to Deriv - CORRECT async implementation"""
         self.token = token.strip()
-        logger.info(f"Connecting to Deriv with token: {self.token[:4]}...{self.token[-4:]}")
+        logger.info(f"Connecting to Deriv with token: {self.token[:4]}...{self.token[-4:]} (length: {len(self.token)})")
+        logger.info(f"Using WebSocket URL: {DERIV_WS_URL}")
         
+        return await self._connect_with_retry()
+    
+    async def _connect_with_retry(self, max_retries=3):
+        """Connect with retry logic - CORRECT async implementation"""
+        for attempt in range(max_retries):
+            try:
+                logger.info(f"Connecting to Deriv (attempt {attempt + 1}/{max_retries})")
+                
+                # Create WebSocket connection with proper ping intervals
+                self.websocket = await websockets.connect(
+                    DERIV_WS_URL,
+                    ping_interval=20,
+                    ping_timeout=20,
+                    close_timeout=10
+                )
+                
+                # STEP 2: Send authorize message with token as string (CORRECT FORMAT!)
+                auth_message = {
+                    "authorize": self.token  # CORRECT: token as string, NOT nested
+                }
+                
+                logger.info(f"Sending authorize message")
+                await self.websocket.send(json.dumps(auth_message))
+                
+                # Wait for response
+                response = await asyncio.wait_for(self.websocket.recv(), timeout=10)
+                logger.info(f"Auth response received")
+                
+                response_data = json.loads(response)
+                
+                # Check for successful authorization
+                if 'authorize' in response_data:
+                    self.connected = True
+                    loginid = response_data['authorize'].get('loginid', 'Unknown')
+                    currency = response_data['authorize'].get('currency', 'USD')
+                    balance = response_data['authorize'].get('balance', 0)
+                    logger.info(f"✅ Connected to Deriv successfully as {loginid}")
+                    logger.info(f"💰 Balance: {balance} {currency}")
+                    
+                    # Start background listener (DO NOT BLOCK)
+                    self.listen_task = asyncio.create_task(self._message_listener())
+                    
+                    return True, f"Connected as {loginid} | Balance: {balance} {currency}"
+                
+                elif 'error' in response_data:
+                    error_msg = response_data['error'].get('message', 'Unknown error')
+                    logger.error(f"Auth failed: {error_msg}")
+                    
+                    if attempt < max_retries - 1:
+                        wait_time = min(30, 2 ** attempt)
+                        logger.info(f"Retrying in {wait_time} seconds...")
+                        await asyncio.sleep(wait_time)
+                        continue
+                    return False, error_msg
+                else:
+                    return False, "Unexpected response format"
+                    
+            except asyncio.TimeoutError:
+                logger.error("Connection timeout")
+                if attempt < max_retries - 1:
+                    wait_time = min(30, 2 ** attempt)
+                    await asyncio.sleep(wait_time)
+                else:
+                    return False, "Connection timeout"
+                    
+            except websockets.exceptions.WebSocketException as e:
+                logger.error(f"WebSocket error: {e}")
+                if attempt < max_retries - 1:
+                    wait_time = min(30, 2 ** attempt)
+                    await asyncio.sleep(wait_time)
+                else:
+                    return False, f"WebSocket error: {str(e)}"
+                    
+            except Exception as e:
+                logger.error(f"Connection attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    wait_time = min(30, 2 ** attempt)
+                    await asyncio.sleep(wait_time)
+                else:
+                    return False, str(e)
+        
+        return False, "Max retries exceeded"
+    
+    async def _message_listener(self):
+        """Listen for incoming messages - CORRECT async implementation"""
         try:
-            self.ws = websocket.create_connection(
-                DERIV_WS_URL,
-                timeout=30,
-                enable_multithread=True
-            )
-            
-            # CORRECT: Send authorize message with token as string
-            auth_message = {
-                "authorize": self.token
-            }
-            self.ws.send(json.dumps(auth_message))
-            
-            response = self.ws.recv()
-            response_data = json.loads(response)
-            
-            if 'authorize' in response_data:
-                self.connected = True
-                loginid = response_data['authorize'].get('loginid', 'Unknown')
-                balance = response_data['authorize'].get('balance', 0)
-                currency = response_data['authorize'].get('currency', 'USD')
-                logger.info(f"✅ Connected to Deriv as {loginid}")
-                logger.info(f"💰 Balance: {balance} {currency}")
-                
-                self._start_heartbeat()
-                self._start_message_listener()
-                
-                return True, f"Connected as {loginid}"
-            else:
-                error = response_data.get('error', {}).get('message', 'Unknown error')
-                logger.error(f"Auth failed: {error}")
-                return False, error
-                
-        except Exception as e:
-            logger.error(f"Connection error: {e}")
-            return False, str(e)
-    
-    def _start_heartbeat(self):
-        def heartbeat():
-            self.ping_thread_running = True
-            while self.connected and self.ping_thread_running:
-                time.sleep(25)
+            while self.connected and self.websocket:
                 try:
-                    if self.ws and self.connected:
-                        ping_msg = {"ping": 1, "req_id": self._next_id()}
-                        self.ws.send(json.dumps(ping_msg))
-                except:
-                    self.connected = False
-                    break
-        thread = threading.Thread(target=heartbeat, daemon=True)
-        thread.start()
-    
-    def _start_message_listener(self):
-        def listener():
-            while self.connected and self.ws:
-                try:
-                    self.ws.settimeout(30)
-                    message = self.ws.recv()
-                    if message:
-                        data = json.loads(message)
-                        if 'pong' in data:
-                            self.last_pong = time.time()
-                        elif 'proposal_open_contract' in data:
-                            contract = data['proposal_open_contract']
-                            contract_id = contract.get('contract_id')
-                            
-                            if contract.get('is_sold', False):
-                                logger.info(f"📊 Contract {contract_id} closed")
-                                for callback in self.trade_callbacks:
-                                    try:
-                                        callback(contract_id, contract)
-                                    except Exception as e:
-                                        logger.error(f"Trade callback error: {e}")
-                except websocket.WebSocketTimeoutException:
-                    if time.time() - self.last_pong > 90:
-                        self.connected = False
-                        break
+                    message = await asyncio.wait_for(self.websocket.recv(), timeout=30)
+                    data = json.loads(message)
+                    
+                    # Handle different message types
+                    if 'error' in data:
+                        logger.error(f"API Error: {data['error']}")
+                    
+                    elif 'proposal_open_contract' in data:
+                        # Handle trade updates
+                        contract = data['proposal_open_contract']
+                        contract_id = contract.get('contract_id')
+                        
+                        if contract.get('is_sold', False):
+                            logger.info(f"📊 Contract {contract_id} closed")
+                            # Notify all registered callbacks
+                            for callback in self.trade_callbacks:
+                                try:
+                                    # Run callback in executor to avoid blocking
+                                    loop = asyncio.get_event_loop()
+                                    await loop.run_in_executor(None, callback, contract_id, contract)
+                                except Exception as e:
+                                    logger.error(f"Trade callback error: {e}")
+                    
+                    elif 'tick' in data:
+                        # Handle tick updates
+                        pass
+                        
+                    elif 'candles' in data:
+                        # Handle candle data
+                        req_id = data.get('req_id')
+                        if req_id in self.pending_requests:
+                            self.pending_requests[req_id]['result'] = data
+                            self.pending_requests[req_id]['event'].set()
+                        
+                except asyncio.TimeoutError:
+                    # Send ping to keep connection alive
+                    if self.connected and self.websocket:
+                        try:
+                            ping_msg = {"ping": 1, "req_id": self._next_id()}
+                            await self.websocket.send(json.dumps(ping_msg))
+                        except:
+                            pass
                     continue
-                except:
-                    break
-            
-            if not self.connected and self.token:
-                logger.info("Reconnecting...")
-                time.sleep(5)
-                self.connect(self.token)
+                    
+        except websockets.exceptions.ConnectionClosed:
+            logger.warning("WebSocket connection closed")
+            self.connected = False
+        except Exception as e:
+            logger.error(f"Message listener error: {e}")
+            self.connected = False
         
-        thread = threading.Thread(target=listener, daemon=True)
-        thread.start()
+        # Auto-reconnect if needed
+        if not self.connected and self.token:
+            logger.info("Message listener disconnected - attempting to reconnect...")
+            await asyncio.sleep(5)
+            asyncio.create_task(self._connect_with_retry())
     
-    def get_candles(self, symbol, count=500, granularity=60):
-        if not self.connected or not self.ws:
+    async def get_candles(self, symbol, count=500, granularity=60):
+        """Get historical candles with caching - async version"""
+        if not self.connected or not self.websocket:
+            logger.error("Not connected to Deriv")
             return None
         
         cache_key = f"{symbol}_{granularity}"
+        
+        # Check cache (5 second cache)
         if cache_key in self.candles_cache:
             cache_time, cache_data = self.candles_cache[cache_key]
             if time.time() - cache_time < 5:
                 return cache_data
         
         try:
+            req_id = self._next_id()
             request = {
                 "ticks_history": symbol,
                 "style": "candles",
                 "granularity": granularity,
-                "count": count,
-                "req_id": self._next_id()
+                "count": min(count, 5000),
+                "req_id": req_id
             }
-            self.ws.send(json.dumps(request))
-            response = self.ws.recv()
-            data = json.loads(response)
             
-            if 'error' in data:
+            # Setup pending request
+            event = asyncio.Event()
+            self.pending_requests[req_id] = {'event': event, 'result': None}
+            
+            await self.websocket.send(json.dumps(request))
+            
+            # Wait for response with timeout
+            try:
+                await asyncio.wait_for(event.wait(), timeout=10)
+                response_data = self.pending_requests[req_id]['result']
+            finally:
+                del self.pending_requests[req_id]
+            
+            if 'error' in response_data:
+                logger.error(f"Error getting candles for {symbol}: {response_data['error']}")
                 return None
             
+            # Format candles
             candles = []
-            for candle in data.get('candles', []):
+            for candle in response_data.get('candles', []):
                 candles.append({
                     'time': candle['epoch'],
                     'open': float(candle['open']),
@@ -251,27 +343,46 @@ class DerivAPI:
                 })
             
             df = pd.DataFrame(candles)
+            
+            # Cache the result
             self.candles_cache[cache_key] = (time.time(), df)
+            
             return df
             
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout getting candles for {symbol}")
+            return None
         except Exception as e:
-            logger.error(f"Error getting candles: {e}")
+            logger.error(f"Failed to get candles for {symbol}: {e}")
             return None
     
-    def get_active_symbols(self):
-        if not self.connected or not self.ws:
+    async def get_active_symbols(self):
+        """Get all active trading symbols - async version"""
+        if not self.connected or not self.websocket:
             return []
         
         try:
+            req_id = self._next_id()
             request = {
                 "active_symbols": "brief",
-                "req_id": self._next_id()
+                "req_id": req_id
             }
-            self.ws.send(json.dumps(request))
-            response = self.ws.recv()
-            data = json.loads(response)
             
-            if 'error' in data:
+            # Setup pending request
+            event = asyncio.Event()
+            self.pending_requests[req_id] = {'event': event, 'result': None}
+            
+            await self.websocket.send(json.dumps(request))
+            
+            # Wait for response
+            try:
+                await asyncio.wait_for(event.wait(), timeout=10)
+                response_data = self.pending_requests[req_id]['result']
+            finally:
+                del self.pending_requests[req_id]
+            
+            if 'error' in response_data:
+                logger.error(f"Error getting symbols: {response_data['error']}")
                 return []
             
             symbols = []
@@ -283,7 +394,7 @@ class DerivAPI:
                 'synthetic_index': '🎲 SYNTHETICS'
             }
             
-            for item in data.get('active_symbols', []):
+            for item in response_data.get('active_symbols', []):
                 market = item.get('market', '').lower()
                 if market in markets or 'synthetic' in market:
                     symbols.append({
@@ -299,12 +410,15 @@ class DerivAPI:
             logger.error(f"Error fetching symbols: {e}")
             return []
     
-    def place_trade(self, symbol, direction, amount, duration=5):
-        if not self.connected or not self.ws:
-            return None, "Not connected"
+    async def place_trade(self, symbol, direction, amount, duration=5):
+        """Place a trade on Deriv - async version"""
+        if not self.connected or not self.websocket:
+            return None, "Not connected to Deriv"
         
         try:
             contract_type = "CALL" if direction == "BUY" else "PUT"
+            
+            req_id = self._next_id()
             order = {
                 "buy": 1,
                 "price": amount,
@@ -316,19 +430,33 @@ class DerivAPI:
                     "duration": duration,
                     "duration_unit": "m"
                 },
-                "req_id": self._next_id()
+                "req_id": req_id
             }
             
-            self.ws.send(json.dumps(order))
-            response = self.ws.recv()
-            data = json.loads(response)
+            # Setup pending request
+            event = asyncio.Event()
+            self.pending_requests[req_id] = {'event': event, 'result': None}
             
-            if 'error' in data:
-                return None, data['error']['message']
+            await self.websocket.send(json.dumps(order))
             
-            contract_id = data['buy'].get('contract_id')
-            entry_price = float(data['buy'].get('price', 0))
+            # Wait for response
+            try:
+                await asyncio.wait_for(event.wait(), timeout=10)
+                response_data = self.pending_requests[req_id]['result']
+            finally:
+                del self.pending_requests[req_id]
             
+            if 'error' in response_data:
+                logger.error(f"Trade failed for {symbol}: {response_data['error']}")
+                return None, response_data['error']['message']
+            
+            if 'buy' not in response_data:
+                return None, "Unexpected response format"
+            
+            contract_id = response_data['buy'].get('contract_id')
+            entry_price = float(response_data['buy'].get('price', 0))
+            
+            # Store active contract
             self.active_contracts[contract_id] = {
                 'symbol': symbol,
                 'direction': direction,
@@ -338,25 +466,40 @@ class DerivAPI:
                 'entry_price': entry_price
             }
             
-            logger.info(f"✅ Trade placed: {symbol} {direction} ${amount}")
+            logger.info(f"✅ Trade placed: {symbol} {direction} ${amount} (ID: {contract_id})")
+            
             return {
                 'contract_id': contract_id,
                 'entry_price': entry_price,
                 'direction': direction,
+                'amount': amount,
                 'symbol': symbol
-            }, "Success"
+            }, "Trade placed successfully"
             
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout placing trade for {symbol}")
+            return None, "Timeout"
         except Exception as e:
-            logger.error(f"Trade error: {e}")
+            logger.error(f"Failed to place trade: {e}")
             return None, str(e)
+    
+    async def disconnect(self):
+        """Disconnect from Deriv"""
+        self.connected = False
+        if self.websocket:
+            await self.websocket.close()
+        logger.info("Disconnected from Deriv")
 
 
-# ============ MARKET STATE ENGINE (Full version) ============
+# ============ MARKET STATE ENGINE (Your complete logic) ============
 class MarketStateEngine:
+    """Analyzes market conditions - EXACT same as your MT5 bot"""
+    
     def __init__(self):
         self.ATR_PERIOD = 14
         
     def analyze(self, df):
+        """Complete market state analysis"""
         if df is None or len(df) < 100:
             return {
                 'state': MarketState.CHOPPY.value,
@@ -368,11 +511,13 @@ class MarketStateEngine:
             }
         
         try:
+            # Calculate indicators
             df = df.copy()
             df['ema_20'] = df['close'].ewm(span=20).mean()
             df['ema_50'] = df['close'].ewm(span=50).mean()
             df['ema_200'] = df['close'].ewm(span=200).mean()
             
+            # Calculate ATR
             high_low = df['high'] - df['low']
             high_close = np.abs(df['high'] - df['close'].shift())
             low_close = np.abs(df['low'] - df['close'].shift())
@@ -387,6 +532,7 @@ class MarketStateEngine:
             support = df['low'].iloc[-20:].min()
             resistance = df['high'].iloc[-20:].max()
             
+            # Determine market state
             if current_price > ema_20 > ema_50 > ema_200:
                 return {
                     'state': MarketState.STRONG_UPTREND.value,
@@ -447,10 +593,13 @@ class MarketStateEngine:
 
 # ============ CONTINUATION ENGINE (Your swapped logic) ============
 class ContinuationEngine:
+    """Trades WITH the trend - your proven swapped logic"""
+    
     def __init__(self):
         self.MAX_PATTERN_AGE = 8
         
     def detect_setups(self, df, market_state):
+        """Detect continuation setups"""
         signals = []
         try:
             current_price = float(df['close'].iloc[-1])
@@ -463,7 +612,7 @@ class ContinuationEngine:
             
             # YOUR GENIUS SWAPPED LOGIC
             if is_bullish:
-                # In uptrend, look for SELL signals
+                # In uptrend, look for SELL signals (reversals)
                 if abs(current_price - ema_20) < current_atr * 0.5:
                     signals.append({
                         'type': 'SELL',
@@ -476,7 +625,7 @@ class ContinuationEngine:
                     })
             
             if is_bearish:
-                # In downtrend, look for BUY signals
+                # In downtrend, look for BUY signals (reversals)
                 if abs(current_price - ema_20) < current_atr * 0.5:
                     signals.append({
                         'type': 'BUY',
@@ -495,38 +644,43 @@ class ContinuationEngine:
 
 # ============ QUASIMODO ENGINE (Your swapped logic) ============
 class QuasimodoEngine:
+    """PURE QUASIMODO - Your proven reversal strategy with swapped logic"""
+    
     def __init__(self):
         self.MAX_PATTERN_AGE = 8
         self.RETEST_TOLERANCE_PIPS = 2
     
     def _get_pip_value(self, symbol):
+        """Get pip value for tolerance"""
         if not symbol:
             return 0.0001
         if 'JPY' in symbol or 'XAG' in symbol or 'BTC' in symbol:
             return 0.01
         elif 'XAU' in symbol or 'US30' in symbol or 'USTEC' in symbol or 'US100' in symbol:
             return 0.1
-        elif 'R_' in symbol:
+        elif 'R_' in symbol:  # Synthetics
             return 0.01
         else:
             return 0.0001
     
-    def _check_retest(self, df, level, direction, tolerance):
+    def _check_retest(self, df, pattern_level, direction, tolerance):
+        """Check if price retested within tolerance"""
         try:
             last_12_low = df['low'].iloc[-12:].min()
             last_12_high = df['high'].iloc[-12:].max()
             
             if direction == 'BUY':
-                if last_12_low <= (level + tolerance):
+                if last_12_low <= (pattern_level + tolerance):
                     return True
             else:
-                if last_12_high >= (level - tolerance):
+                if last_12_high >= (pattern_level - tolerance):
                     return True
             return False
         except:
             return False
     
     def detect_setups(self, df, market_state, symbol):
+        """Detect Quasimodo setups"""
         signals = []
         try:
             atr = df['atr']
@@ -548,7 +702,7 @@ class QuasimodoEngine:
                     continue
                 
                 # YOUR GENIUS SWAPPED LOGIC
-                # Bearish Quasimodo (h1 < h2 > h3) -> BUY signal
+                # SELL QUASIMODO (Bearish pattern) -> BUY signal
                 if h1 < h2 > h3 and l1 < l2 < l3:
                     if self._check_retest(df, h2, 'SELL', tolerance):
                         signals.append({
@@ -561,7 +715,7 @@ class QuasimodoEngine:
                             'pattern': 'Quasimodo Sell Setup (BUY)'
                         })
                 
-                # Bullish Quasimodo (l1 > l2 < l3) -> SELL signal
+                # BUY QUASIMODO (Bullish pattern) -> SELL signal
                 if l1 > l2 < l3 and h1 > h2 > h3:
                     if self._check_retest(df, l2, 'BUY', tolerance):
                         signals.append({
@@ -581,32 +735,58 @@ class QuasimodoEngine:
 
 # ============ SMART STRATEGY SELECTOR ============
 class SmartStrategySelector:
+    """Decides which strategy to use - EXACT same as your MT5 bot"""
+    
     def select_best_trades(self, continuation_signals, quasimodo_signals, market_state):
+        """Select best trades for current market"""
         state = market_state.get('state')
         selected = []
         
-        if state == MarketState.STRONG_UPTREND.value:
-            selected = [t for t in continuation_signals if t.get('type') == 'SELL']
-        elif state == MarketState.STRONG_DOWNTREND.value:
-            selected = [t for t in continuation_signals if t.get('type') == 'BUY']
-        elif state == MarketState.UPTREND.value:
-            selected = [t for t in continuation_signals if t.get('type') == 'SELL']
-            strong_qm = [q for q in quasimodo_signals if q.get('confidence', 0) > 80]
-            selected.extend(strong_qm)
-        elif state == MarketState.DOWNTREND.value:
-            selected = [t for t in continuation_signals if t.get('type') == 'BUY']
-            strong_qm = [q for q in quasimodo_signals if q.get('confidence', 0) > 80]
-            selected.extend(strong_qm)
-        elif state == MarketState.RANGING.value:
-            selected = quasimodo_signals
-        elif state == MarketState.CHOPPY.value:
-            selected = []
+        try:
+            # STRONG UPTREND - ONLY CONTINUATION SELLS
+            if state == MarketState.STRONG_UPTREND.value:
+                selected = [t for t in continuation_signals if t.get('type') == 'SELL']
+            
+            # STRONG DOWNTREND - ONLY CONTINUATION BUYS
+            elif state == MarketState.STRONG_DOWNTREND.value:
+                selected = [t for t in continuation_signals if t.get('type') == 'BUY']
+            
+            # UPTREND - PREFER CONTINUATION SELLS, ALLOW STRONG QUASIMODO
+            elif state == MarketState.UPTREND.value:
+                selected = [t for t in continuation_signals if t.get('type') == 'SELL']
+                strong_qm = [q for q in quasimodo_signals if q.get('confidence', 0) > 80]
+                selected.extend(strong_qm)
+            
+            # DOWNTREND - PREFER CONTINUATION BUYS, ALLOW STRONG QUASIMODO
+            elif state == MarketState.DOWNTREND.value:
+                selected = [t for t in continuation_signals if t.get('type') == 'BUY']
+                strong_qm = [q for q in quasimodo_signals if q.get('confidence', 0) > 80]
+                selected.extend(strong_qm)
+            
+            # RANGING - ONLY QUASIMODO
+            elif state == MarketState.RANGING.value:
+                selected = quasimodo_signals
+            
+            # CHOPPY - SKIP ALL
+            elif state == MarketState.CHOPPY.value:
+                selected = []
+            
+            # Filter by confidence (minimum 65%)
+            selected = [t for t in selected if t.get('confidence', 0) >= 65]
+            
+            # Sort by confidence
+            selected.sort(key=lambda x: x.get('confidence', 0), reverse=True)
+            
+        except Exception as e:
+            logger.error(f"Strategy selector error: {e}")
         
-        return [t for t in selected if t.get('confidence', 0) >= 65]
+        return selected
 
 
-# ============ TRADING ENGINE (Full version with all features) ============
+# ============ TRADING ENGINE ============
 class KarankaTradingEngine:
+    """Main trading engine - EXACT logic from your MT5 bot, adapted for Deriv"""
+    
     def __init__(self):
         self.api = DerivAPI()
         self.market_engine = MarketStateEngine()
@@ -617,6 +797,8 @@ class KarankaTradingEngine:
         self.connected = False
         self.running = False
         self.token = None
+        self.loop = None
+        self.trading_task = None
         
         self.active_trades = []
         self.trade_history = []
@@ -668,12 +850,14 @@ class KarankaTradingEngine:
         logger.info(f"✅ Karanka Trading Engine initialized with {len(self.enabled_symbols)} markets")
     
     def on_trade_update(self, contract_id, contract_data):
+        """Callback when Deriv sends a trade update"""
         logger.info(f"📨 Trade update for {contract_id}")
         
         if contract_data.get('is_sold', False):
             self._close_trade(contract_id, contract_data)
     
     def _close_trade(self, contract_id, contract_data):
+        """Close a trade and move it to history"""
         for trade in self.active_trades[:]:
             if trade.get('contract_id') == contract_id or trade.get('id') == contract_id:
                 profit = float(contract_data.get('profit', 0))
@@ -696,6 +880,7 @@ class KarankaTradingEngine:
                 break
     
     def _apply_trailing_stop(self, trade):
+        """Apply trailing stop logic to protect profits"""
         if not self.trailing_stop_enabled:
             return
         
@@ -738,19 +923,22 @@ class KarankaTradingEngine:
         except Exception as e:
             logger.error(f"Trailing stop error: {e}")
     
-    def connect(self, token):
+    async def connect(self, token):
+        """Connect to Deriv - passes token EXACTLY as received"""
         self.token = token
-        success, message = self.api.connect(token)
+        success, message = await self.api.connect(token)
         if success:
             self.connected = True
         return success, message
     
-    def disconnect(self):
-        self.api.disconnect()
+    async def disconnect(self):
+        """Disconnect from Deriv"""
+        await self.api.disconnect()
         self.connected = False
         self.running = False
     
-    def start_trading(self, settings=None):
+    async def start_trading(self, settings=None):
+        """Start trading loop (DOES NOT BLOCK)"""
         if not self.connected:
             return False, "Not connected"
         
@@ -765,16 +953,20 @@ class KarankaTradingEngine:
                 self.enabled_symbols = settings['enabled_symbols']
         
         self.running = True
-        thread = threading.Thread(target=self._trading_loop, daemon=True)
-        thread.start()
+        # Start trading loop as background task - DOES NOT BLOCK!
+        self.trading_task = asyncio.create_task(self._trading_loop())
         logger.info(f"🚀 Trading started")
         return True, "Trading started"
     
     def stop_trading(self):
+        """Stop trading loop"""
         self.running = False
         logger.info("🛑 Trading stopped")
     
-    def _trading_loop(self):
+    async def _trading_loop(self):
+        """Main trading loop - async version"""
+        error_count = 0
+        
         while self.running and self.connected:
             try:
                 self.analysis_cycle += 1
@@ -782,7 +974,7 @@ class KarankaTradingEngine:
                 
                 for symbol in self.enabled_symbols:
                     try:
-                        df = self.api.get_candles(symbol, 300, 60)
+                        df = await self.api.get_candles(symbol, 300, 60)
                         if df is None or len(df) < 100:
                             continue
                         
@@ -826,7 +1018,7 @@ class KarankaTradingEngine:
                                     self.active_trades.append(trade_record)
                                     logger.info(f"✅ [DRY RUN] {symbol} {trade['type']}")
                                 else:
-                                    result, msg = self.api.place_trade(symbol, trade['type'], self.fixed_amount)
+                                    result, msg = await self.api.place_trade(symbol, trade['type'], self.fixed_amount)
                                     if result:
                                         trade_record = {
                                             'symbol': symbol,
@@ -852,16 +1044,20 @@ class KarankaTradingEngine:
                     except Exception as e:
                         logger.error(f"Error analyzing {symbol}: {e}")
                 
-                socketio.emit('market_update', self.get_market_data())
-                socketio.emit('trade_update', self.get_trade_data())
+                logger.info(f"📊 Cycle {self.analysis_cycle} complete")
                 
-                time.sleep(8)
+                await asyncio.sleep(8)
                 
             except Exception as e:
+                error_count += 1
                 logger.error(f"Trading loop error: {e}")
-                time.sleep(10)
+                if error_count > 5:
+                    self.running = False
+                    break
+                await asyncio.sleep(10)
     
     def get_market_data(self):
+        """Get market analysis data for UI"""
         return {
             'market_analysis': self.market_analysis,
             'timestamp': datetime.now().isoformat(),
@@ -869,6 +1065,7 @@ class KarankaTradingEngine:
         }
     
     def get_trade_data(self):
+        """Get trade data for UI"""
         enhanced_active = []
         for trade in self.active_trades:
             enhanced_trade = trade.copy()
@@ -897,6 +1094,7 @@ class KarankaTradingEngine:
         }
     
     def get_status(self):
+        """Get system status"""
         return {
             'connected': self.connected,
             'running': self.running,
@@ -911,17 +1109,22 @@ class KarankaTradingEngine:
         }
 
 
-# ============ INITIALIZE ============
+# ============ GLOBAL INSTANCE ============
 trading_engine = KarankaTradingEngine()
 keep_awake = KeepAwake(BASE_URL)
 
-# ============ FLASK ROUTES ============
-@app.route('/')
-def index():
-    return render_template('index.html')
+# ============ FASTAPI ROUTES ============
 
-@app.route('/health')
-def health():
+@app.get("/", response_class=HTMLResponse)
+async def get_index():
+    """Serve the main HTML page"""
+    from fastapi.templating import Jinja2Templates
+    templates = Jinja2Templates(directory="templates")
+    return templates.TemplateResponse("index.html", {"request": {}})
+
+@app.get("/health")
+async def health_check():
+    """Health check endpoint for Render"""
     return {
         'status': 'healthy',
         'timestamp': datetime.now().isoformat(),
@@ -930,61 +1133,104 @@ def health():
         'active_trades': len(trading_engine.active_trades)
     }
 
-@app.route('/api/connect', methods=['POST'])
-def api_connect():
+@app.get("/ping")
+async def ping():
+    """Simple ping endpoint for keep-awake"""
+    return "pong"
+
+@app.post("/api/connect")
+async def api_connect(request: Request):
+    """Connect to Deriv - CORRECT async implementation (DOES NOT BLOCK)"""
     try:
-        data = request.json
+        data = await request.json()
         token = data.get('token')
-        if not token:
-            return jsonify({'success': False, 'message': 'Token required'})
         
-        success, message = trading_engine.connect(token)
-        return jsonify({'success': success, 'message': message})
+        if not token:
+            return JSONResponse({'success': False, 'message': 'Token required'})
+        
+        logger.info(f"Received token: {token[:4]}...{token[-4:]} (length: {len(token)})")
+        
+        # CORRECT: Create background task, don't block!
+        asyncio.create_task(trading_engine.connect(token))
+        
+        return JSONResponse({'success': True, 'message': 'Connecting...'})
+        
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
+        logger.error(f"Connect error: {e}")
+        return JSONResponse({'success': False, 'message': str(e)})
 
-@app.route('/api/disconnect', methods=['POST'])
-def api_disconnect():
-    trading_engine.disconnect()
-    return jsonify({'success': True, 'message': 'Disconnected'})
+@app.post("/api/disconnect")
+async def api_disconnect():
+    """Disconnect from Deriv"""
+    try:
+        await trading_engine.disconnect()
+        return JSONResponse({'success': True, 'message': 'Disconnected'})
+    except Exception as e:
+        return JSONResponse({'success': False, 'message': str(e)})
 
-@app.route('/api/start', methods=['POST'])
-def api_start():
-    settings = request.json or {}
-    success, message = trading_engine.start_trading(settings)
-    return jsonify({'success': success, 'message': message})
+@app.post("/api/start")
+async def api_start(request: Request):
+    """Start trading - CORRECT async implementation (DOES NOT BLOCK)"""
+    try:
+        data = await request.json()
+        settings = data or {}
+        
+        # Run in background - DOES NOT BLOCK!
+        asyncio.create_task(trading_engine.start_trading(settings))
+        
+        return JSONResponse({'success': True, 'message': 'Starting...'})
+    except Exception as e:
+        return JSONResponse({'success': False, 'message': str(e)})
 
-@app.route('/api/stop', methods=['POST'])
-def api_stop():
-    trading_engine.stop_trading()
-    return jsonify({'success': True, 'message': 'Trading stopped'})
+@app.post("/api/stop")
+async def api_stop():
+    """Stop trading"""
+    try:
+        trading_engine.stop_trading()
+        return JSONResponse({'success': True, 'message': 'Trading stopped'})
+    except Exception as e:
+        return JSONResponse({'success': False, 'message': str(e)})
 
-@app.route('/api/status')
-def api_status():
-    return jsonify(trading_engine.get_status())
+@app.get("/api/status")
+async def api_status():
+    """Get system status"""
+    try:
+        return JSONResponse(trading_engine.get_status())
+    except Exception as e:
+        return JSONResponse({'error': str(e)})
 
-@app.route('/api/market_data')
-def api_market_data():
-    return jsonify(trading_engine.get_market_data())
+@app.get("/api/market_data")
+async def api_market_data():
+    """Get market data"""
+    try:
+        return JSONResponse(trading_engine.get_market_data())
+    except Exception as e:
+        return JSONResponse({'error': str(e)})
 
-@app.route('/api/trade_data')
-def api_trade_data():
-    return jsonify(trading_engine.get_trade_data())
+@app.get("/api/trade_data")
+async def api_trade_data():
+    """Get trade data"""
+    try:
+        return JSONResponse(trading_engine.get_trade_data())
+    except Exception as e:
+        return JSONResponse({'error': str(e)})
 
-@app.route('/api/symbols')
-def api_symbols():
+@app.get("/api/symbols")
+async def api_symbols():
+    """Get available symbols"""
     try:
         if trading_engine.connected:
-            symbols = trading_engine.api.get_active_symbols()
-            return jsonify({'success': True, 'symbols': symbols})
-        return jsonify({'success': False, 'symbols': []})
+            symbols = await trading_engine.api.get_active_symbols()
+            return JSONResponse({'success': True, 'symbols': symbols})
+        return JSONResponse({'success': False, 'symbols': []})
     except Exception as e:
-        return jsonify({'success': False, 'error': str(e)})
+        return JSONResponse({'success': False, 'error': str(e)})
 
-@app.route('/api/settings', methods=['POST'])
-def api_settings():
+@app.post("/api/settings")
+async def api_settings(request: Request):
+    """Update settings"""
     try:
-        data = request.json
+        data = await request.json()
         if data:
             trading_engine.dry_run = data.get('dry_run', trading_engine.dry_run)
             trading_engine.max_daily_trades = int(data.get('max_daily_trades', trading_engine.max_daily_trades))
@@ -994,30 +1240,17 @@ def api_settings():
             trading_engine.trailing_stop_enabled = data.get('trailing_stop', trading_engine.trailing_stop_enabled)
             if data.get('enabled_symbols'):
                 trading_engine.enabled_symbols = data['enabled_symbols']
-        return jsonify({'success': True})
+        return JSONResponse({'success': True})
     except Exception as e:
-        return jsonify({'success': False, 'message': str(e)})
-
-@socketio.on('connect')
-def handle_connect():
-    logger.info(f"📱 Client connected: {request.sid}")
-
-@socketio.on('disconnect')
-def handle_disconnect():
-    logger.info(f"📱 Client disconnected: {request.sid}")
-
-@socketio.on('request_update')
-def handle_update():
-    emit('market_update', trading_engine.get_market_data())
-    emit('trade_update', trading_engine.get_trade_data())
+        return JSONResponse({'success': False, 'message': str(e)})
 
 # ============ STARTUP ============
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 5000))
+if __name__ == "__main__":
+    port = int(os.environ.get('PORT', 8000))
     start_time = time.time()
     
     logger.info("=" * 60)
-    logger.info("KARANKA MULTIVERSE ALGO AI - DERIV BOT")
+    logger.info("KARANKA MULTIVERSE ALGO AI - DERIV PRODUCTION BOT")
     logger.info("=" * 60)
     logger.info(f"✅ Market State Engine: ACTIVE")
     logger.info(f"✅ Continuation: SWAPPED (SELL in uptrend, BUY in downtrend)")
@@ -1028,9 +1261,20 @@ if __name__ == '__main__':
     logger.info(f"✅ TRADE TRACKING: ACTIVE")
     logger.info(f"✅ TRAILING STOP: ACTIVE")
     logger.info(f"✅ 49 MARKETS: LOADED")
-    logger.info(f"✅ DERIV CONNECTION: FIXED - Using {DERIV_WS_URL}")
+    logger.info(f"✅ CORRECT DERIV URL: {DERIV_WS_URL}")
+    logger.info(f"✅ ASYNC WEBSOCKETS: Using websockets library")
+    logger.info(f"✅ NON-BLOCKING API: Background tasks")
+    logger.info(f"✅ KEEP-AWAKE: Active")
     logger.info(f"✅ Port: {port}")
     logger.info("=" * 60)
     
+    # Start keep-awake mechanism
     keep_awake.start()
-    socketio.run(app, host='0.0.0.0', port=port, debug=False, allow_unsafe_werkzeug=True)
+    
+    # Run with uvicorn
+    uvicorn.run(
+        "main:app",
+        host="0.0.0.0",
+        port=port,
+        log_level="info"
+    )
