@@ -12,28 +12,7 @@ blinker==1.6.2
 itsdangerous==2.1.2
 
 # ============ WEBSOCKET - CRITICAL FOR DERIV ============
-websocket-client==1.6.3      # For "import websocket" - CONNECTS TO DERIV!
-websockets==12.0              # Async WebSocket support
+websocket-client==1.6.3
+websockets==12.0
 
-# ============ DATA PROCESSING ============
-pandas==2.0.3
-numpy==1.24.3
-python-dateutil==2.8.2
-pytz==2023.3
-six==1.16.0
-
-# ============ HTTP REQUESTS ============
-requests==2.31.0
-urllib3==2.0.4
-certifi==2023.7.22
-charset-normalizer==3.2.0
-idna==3.4
-
-# ============ ASYNC SUPPORT ============
-greenlet==3.0.0
-asyncio==3.4.3
-
-# ============ ADDITIONAL DEPENDENCIES ============
-simple-websocket==1.0.0
-wsproto==1.2.0
-h11==0.14.0
+# =
